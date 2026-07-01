@@ -1,0 +1,22 @@
+# Fully isolated from newsautomation:
+#  - own project name (alertkonsumencki) + container_name + image
+#  - default bridge network, NO host networking, NO published ports
+#  - own ./session volume (Telethon session + persisted state.json)
+# newsautomation's podman-compose only ever touches its own 'newsautomation' project,
+# so running/redeploying it will not recreate or remove this container.
+version: '3.8'
+
+services:
+  bot:
+    container_name: alertkonsumencki_bot
+    image: localhost/alertkonsumencki_bot:latest
+    build:
+      context: .
+      dockerfile: Containerfile
+    env_file: .env
+    environment:
+      # keep state.json inside the persisted session volume so it survives redeploys
+      - STATE_FILE=/app/session/state.json
+    volumes:
+      - ./session:/app/session
+    restart: unless-stopped

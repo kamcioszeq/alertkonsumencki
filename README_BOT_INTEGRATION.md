@@ -7,8 +7,8 @@ Everything needed to stand up the Telegram side and fill `.env`.
 1. Open [@BotFather](https://t.me/BotFather) in Telegram.
 2. Send `/newbot`, choose a display name and a username ending in `bot`.
 3. BotFather returns a token like `123456789:AAE…`. That is your **`BOT_TOKEN`**.
-4. Send `/setprivacy` → select the bot → **Disable**, so the bot can read messages in groups
-   (needed if your internal chat is a group and you paste links there).
+4. (Optional) `/setprivacy` only matters for *groups*. You review by DMing the bot directly, so
+   you can leave privacy mode on — bots always receive their direct messages.
 
 ## 2. Get API credentials (`API_ID`, `API_HASH`)
 
@@ -19,26 +19,26 @@ Everything needed to stand up the Telegram side and fill `.env`.
 > Telethon needs these even for a bot login; there is **no phone/2FA prompt** because we start
 > with the bot token.
 
-## 3. Create the two chats
+## 3. Set up the two endpoints
 
-- **Internal review chat** (`INTERNAL_CHAT_ID`): a *private* group or channel where drafts appear
-  and you press buttons. A **group** is the easiest (buttons + replies work well).
+- **Internal review = your direct chat with the bot.** Open the bot in Telegram and press
+  **Start** (or send any message) so it is allowed to DM you back. You'll paste links / send
+  `/test` here and accept or decline drafts. No group needed — `INTERNAL_CHAT_ID` is simply **your
+  own numeric user ID**, and you can leave it blank to default to your `REVIEWER_IDS`.
 - **Broadcast channel** (`BROADCAST_CHANNEL_ID`): the *public* channel where approved alerts are
-  published.
+  published. Add the bot as an **administrator** here (post-messages permission).
 
-Add your bot as an **administrator in both** (it must be able to post messages; in the internal
-chat it also needs to send messages and edit its own).
+## 4. Get your user ID and the channel ID
 
-## 4. Get the chat IDs and your reviewer ID
+- **Your user ID** (`REVIEWER_IDS`, and implicitly `INTERNAL_CHAT_ID`): message
+  [@userinfobot](https://t.me/userinfobot) → it replies with your numeric id. Comma-separate for
+  multiple reviewers (drafts go to the first one's DM).
+- **Broadcast channel ID** (`BROADCAST_CHANNEL_ID`): add [@userinfobot](https://t.me/userinfobot)
+  (or `@JsonDumpBot`) to the channel, or forward a channel message to it. Channel IDs are
+  **negative** and start with `-100…` (e.g. `-1001234567890`) — use the full value.
 
-- **Your user ID** (`REVIEWER_IDS`): message [@userinfobot](https://t.me/userinfobot) → it replies
-  with your numeric id. Add more ids comma-separated for multiple reviewers.
-- **Chat IDs**: add [@userinfobot](https://t.me/userinfobot) (or `@JsonDumpBot`) to the chat, or
-  forward a message from the channel to it. Channel/supergroup IDs are **negative** and start with
-  `-100…` (e.g. `-1001234567890`). Use the full value including the `-100`.
-
-Quick sanity check without extra bots: temporarily run `main.py`, send `/test` in the internal
-chat, and watch the console — the `[START]` line prints the ids the bot is actually using.
+Quick sanity check: run `main.py`, DM the bot `/test`, and watch the console — the `[START]` line
+prints the ids the bot is actually using.
 
 ## 5. Fill `.env`
 
@@ -50,9 +50,9 @@ cp .env.example .env
 |---|---|
 | `API_ID`, `API_HASH` | my.telegram.org (step 2) |
 | `BOT_TOKEN` | @BotFather (step 1) |
-| `INTERNAL_CHAT_ID` | internal group/channel id (step 4, `-100…`) |
-| `BROADCAST_CHANNEL_ID` | public channel id (step 4, `-100…`) |
 | `REVIEWER_IDS` | your numeric id(s) from @userinfobot |
+| `INTERNAL_CHAT_ID` | leave blank (defaults to your DM) — or your user id to be explicit |
+| `BROADCAST_CHANNEL_ID` | public channel id (step 4, `-100…`) |
 | `CLAUDE_API_KEY` | Anthropic console |
 | `CLAUDE_MODEL` | optional; defaults to `claude-haiku-4-5-20251001` |
 
@@ -68,9 +68,10 @@ button. Click it to generate a draft.
 
 ## Troubleshooting
 
-- **Bot doesn't react in a group** — privacy mode still on (step 1.4) or bot isn't an admin.
-- **`Cannot find any entity` / `chat not found`** — wrong id or missing `-100` prefix; the bot must
-  also be a member/admin of that chat.
+- **Bot never DMs you / `chat not found` on your id** — you haven't pressed **Start** on the bot,
+  so it isn't allowed to message you. Send it any message first.
+- **`Cannot find any entity` / `chat not found` on the channel** — wrong id or missing `-100`
+  prefix; the bot must also be an admin of the broadcast channel.
 - **Publish does nothing / error** — the bot lacks *post messages* permission in the broadcast channel.
 - **Buttons do nothing** — your user id isn't in `REVIEWER_IDS`.
 - **`ValueError: invalid literal for int()`** — an id/`API_ID` in `.env` is empty or non-numeric.

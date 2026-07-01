@@ -10,9 +10,14 @@ API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# Internal review chat (drafts land here) and public broadcast channel (published posts).
-INTERNAL_CHAT_ID = int(os.getenv("INTERNAL_CHAT_ID"))
-BROADCAST_CHANNEL_ID = int(os.getenv("BROADCAST_CHANNEL_ID"))
-
 # Numeric Telegram user IDs allowed to press buttons / issue commands.
 REVIEWER_IDS = [int(x.strip()) for x in os.getenv("REVIEWER_IDS", "").split(",") if x.strip()]
+
+# Where drafts are reviewed. For direct-DM review this is your OWN user ID — the bot
+# DMs you and you accept/decline there. Leave INTERNAL_CHAT_ID blank to default to the
+# first reviewer's private chat with the bot.
+_internal = os.getenv("INTERNAL_CHAT_ID", "").strip()
+INTERNAL_CHAT_ID = int(_internal) if _internal else (REVIEWER_IDS[0] if REVIEWER_IDS else None)
+
+# Public broadcast channel where approved posts are published.
+BROADCAST_CHANNEL_ID = int(os.getenv("BROADCAST_CHANNEL_ID"))

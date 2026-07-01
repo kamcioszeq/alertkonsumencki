@@ -1,0 +1,7 @@
+venv/
+.git/
+session/
+state.json
+__pycache__/
+*.pyc
+.env

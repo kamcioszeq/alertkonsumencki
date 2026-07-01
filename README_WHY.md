@@ -3,14 +3,13 @@
 This bot exists to turn a **raw source** (a GIS/gov.pl alert page, or pasted text) into a
 **polished, reviewed consumer-alert post** on a public Telegram channel — with a human in the loop.
 
-## Two chats: internal → broadcast
+## Two places: your DM → broadcast
 
-- **Internal chat** = the workshop. Reviewers drop links, generate drafts, tweak wording. Nothing
-  here is public.
+- **Internal review = your direct chat with the bot.** You paste links / send `/test`, the bot
+  DMs back drafts, and you accept or decline right there. Nothing here is public.
 - **Broadcast channel** = the shop window. Only approved, final alerts land here.
 
-Keeping them separate means mistakes never reach subscribers, and several people can collaborate on
-a draft before it goes out.
+Keeping the workshop (your DM) separate from the channel means mistakes never reach subscribers.
 
 ## One bot, not two
 

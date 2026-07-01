@@ -10,7 +10,7 @@ import json
 import os
 import time
 
-STATE_FILE = "state.json"
+STATE_FILE = os.getenv("STATE_FILE", "state.json")
 _STATE_LOADING = False
 
 
