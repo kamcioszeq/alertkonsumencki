@@ -1,0 +1,121 @@
+"""Draft editing: rephrase styles, manual edit, publish, reject."""
+from telethon import events
+from . import config
+from .prompts import SYSTEM_PROMPT, REPHRASE_INSTRUCTIONS, REPHRASE_LABELS, STYLE_NAMES
+from .buttons import make_url_adjust_buttons
+from .format import fit_telegram_text
+from .publish import send_preview, publish_to_channel, show_loading
+from core.claude import ask_claude
+from core.state import pending_posts, track_post, save_state
+
+
+def register_handlers(bot):
+    @bot.on(events.CallbackQuery)
+    async def on_button(event):
+        if event.sender_id not in config.REVIEWER_IDS:
+            return
+
+        msg_id = event.message_id
+        data = event.data.decode()
+
+        post = pending_posts.get(msg_id)
+        if not post or post.get("platform") != "url_article":
+            return
+
+        if data == "pub_yes":
+            await event.answer("Publikuję...")
+            await show_loading(event, "Publikuję...")
+            print("[PUBLISH] Publikuję na kanale broadcast...")
+            await publish_to_channel(bot, post["text"])
+            original_msg = await event.get_message()
+            await original_msg.edit(original_msg.text + "\n\n✅ OPUBLIKOWANO", buttons=None)
+            post["platform"] = "published"
+            save_state()
+            return
+
+        if data == "pub_no":
+            pending_posts.pop(msg_id, None)
+            await event.answer("Odrzucono")
+            try:
+                await event.delete()
+            except Exception:
+                pass
+            return
+
+        if data == "pub_edit":
+            await event.answer("Edycja...")
+            await bot.send_message(
+                config.INTERNAL_CHAT_ID,
+                "Odpowiedz na tę wiadomość nowym tekstem. Zacznij od ! aby podmienić "
+                "dosłownie, albo napisz instrukcję do przerobienia:",
+                reply_to=msg_id,
+            )
+            return
+
+        if data in REPHRASE_INSTRUCTIONS:
+            label = REPHRASE_LABELS[data]
+            await event.answer(f"Przerabiam ({label})...")
+            await show_loading(event, f"{label}...")
+            print(f"[{label}] Przerabiam post...")
+
+            chain = post.get("edit_chain", [])
+            style_context = ""
+            if chain:
+                applied = [STYLE_NAMES.get(s, s) for s in chain]
+                style_context = (
+                    f"WAŻNE: Dotychczas zastosowane style: {', '.join(applied)}. "
+                    "ZACHOWAJ charakter poprzednich edycji, tylko zastosuj nowe polecenie.\n\n"
+                )
+
+            instruction = style_context + REPHRASE_INSTRUCTIONS[data] + post["text"]
+            rewritten = await ask_claude(post["original_text"], post["source"], instruction,
+                                         system_prompt=SYSTEM_PROMPT)
+            rewritten = fit_telegram_text(rewritten)
+
+            anchor = post.get("phase1_msg_id")
+            sent = await send_preview(bot, rewritten, make_url_adjust_buttons(), reply_to=anchor)
+
+            post["text"] = rewritten
+            post.setdefault("edit_chain", []).append(data)
+            post["phase"] = "adjust"
+            pending_posts.pop(msg_id, None)
+            pending_posts[sent.id] = track_post(pending_posts, post, sent_id=sent.id)
+
+            try:
+                await (await event.get_message()).delete()
+            except Exception:
+                pass
+            return
+
+    # ── Manual text edit via reply ──
+    @bot.on(events.NewMessage(func=lambda e: (
+        e.is_reply and getattr(e, "chat_id", None) == config.INTERNAL_CHAT_ID
+    )))
+    async def on_edit_reply(event):
+        if event.sender_id not in config.REVIEWER_IDS:
+            return
+
+        reply_msg = await event.get_reply_message()
+        original_msg_id = reply_msg.reply_to_msg_id if reply_msg.reply_to_msg_id else reply_msg.id
+
+        post = pending_posts.get(original_msg_id)
+        if not post or post.get("platform") != "url_article":
+            return
+
+        text = event.text.strip()
+        if text.startswith("!"):
+            post["text"] = text[1:].strip()
+            await event.reply("Tekst zaktualizowany.")
+        else:
+            await event.reply("Przerabiam...")
+            new_text = await ask_claude(
+                post["original_text"], post["source"],
+                f"{text}\n\nOto tekst do przerobienia:\n\n{post['text']}",
+                system_prompt=SYSTEM_PROMPT,
+            )
+            post["text"] = fit_telegram_text(new_text)
+
+        anchor = post.get("phase1_msg_id")
+        sent = await send_preview(bot, post["text"], make_url_adjust_buttons(), reply_to=anchor)
+        pending_posts.pop(original_msg_id, None)
+        pending_posts[sent.id] = track_post(pending_posts, post, sent_id=sent.id)
