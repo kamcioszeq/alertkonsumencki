@@ -2,5 +2,8 @@
 venv/
 session/
 state.json
+gis_alerts/
+crawler_state.json
+queue/
 __pycache__/
 *.pyc

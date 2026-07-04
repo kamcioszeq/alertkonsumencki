@@ -3,9 +3,13 @@ from telethon import Button
 
 
 def make_generate_button():
-    """Phase-1: a dropped link/item — click to generate the draft."""
+    """Phase-1: a dropped link/item — click to generate the draft.
+
+    Obok domyślnego „Generuj post" dwa szybkie warianty: Krótki / Długi alert,
+    które od razu generują z dedykowanego szablonu."""
     return [
         [Button.inline("🔍 Generuj post", b"url_read")],
+        [Button.inline("Krótki alert", b"gen_short"), Button.inline("Długi alert", b"gen_long")],
         [Button.inline("Odrzuć", b"reject")],
     ]
 
@@ -28,9 +32,23 @@ def make_url_publish_buttons():
 
 
 def make_url_adjust_buttons():
-    """Draft adjust menu — the 4 custom rephrase styles + publish/reject/edit."""
+    """Draft adjust menu — the 4 custom rephrase styles + shorten/publish/reject/edit."""
     return [
         [Button.inline("Publikuj", b"pub_yes"), Button.inline("Odrzuć", b"pub_no")],
         [Button.inline("Bardziej formalny", b"formal"), Button.inline("Mniej formalny", b"informal")],
-        [Button.inline("Techniczny", b"technical"), Button.inline("Sugestia", b"suggestion"), Button.inline("Edytuj", b"pub_edit")],
+        [Button.inline("Techniczny", b"technical"), Button.inline("Sugestia", b"suggestion")],
+        [Button.inline("Skróć", b"shorten_menu"), Button.inline("Edytuj", b"pub_edit")],
+    ]
+
+
+def make_shorten_buttons():
+    """Shorten submenu — reduce the draft by a chosen percentage."""
+    return [
+        [
+            Button.inline("20%", b"short_20"),
+            Button.inline("30%", b"short_30"),
+            Button.inline("50%", b"short_50"),
+            Button.inline("70%", b"short_70"),
+        ],
+        [Button.inline("← Wróć", b"shorten_back")],
     ]

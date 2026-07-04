@@ -8,9 +8,10 @@
 #   ./deploy.sh            # build + start (detached)
 #   ./deploy.sh restart    # recreate the container (no rebuild)
 #   ./deploy.sh rebuild    # rebuild image + recreate
-#   ./deploy.sh logs       # follow logs
-#   ./deploy.sh down       # stop + remove (this project only)
-#   ./deploy.sh status     # show this project's container
+#   ./deploy.sh logs         # follow bot logs
+#   ./deploy.sh logs-crawler # follow GIS crawler logs
+#   ./deploy.sh down         # stop + remove (this project only)
+#   ./deploy.sh status       # show this project's containers
 #
 set -euo pipefail
 
@@ -21,6 +22,10 @@ cd "$REPO_DIR"
 export COMPOSE_PROJECT_NAME=alertkonsumencki
 CONTAINER=alertkonsumencki_bot
 COMPOSE="podman-compose"
+
+# ── Tweakables ──────────────────────────────────────────────
+# Interwał crawlera GIS w sekundach (do czasu wyniesienia na osobny serwer).
+export CRAWLER_INTERVAL="${CRAWLER_INTERVAL:-600}"
 
 GREEN='\033[0;32m'; RED='\033[0;31m'; NC='\033[0m'
 log()   { echo -e "${GREEN}[alertkonsumencki]${NC} $1"; }
@@ -57,11 +62,14 @@ case "${1:-up}" in
     logs)
         podman logs -f --tail=100 "$CONTAINER"
         ;;
+    logs-crawler)
+        podman logs -f --tail=100 alertkonsumencki_crawler
+        ;;
     status)
-        podman ps --filter "name=^${CONTAINER}$" --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
+        podman ps --filter "name=^alertkonsumencki_" --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
         ;;
     *)
-        echo "usage: $0 {up|rebuild|restart|down|logs|status}"
+        echo "usage: $0 {up|rebuild|restart|down|logs|logs-crawler|status}"
         exit 1
         ;;
 esac

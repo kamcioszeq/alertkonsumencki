@@ -20,4 +20,16 @@ _internal = os.getenv("INTERNAL_CHAT_ID", "").strip()
 INTERNAL_CHAT_ID = int(_internal) if _internal else (REVIEWER_IDS[0] if REVIEWER_IDS else None)
 
 # Public broadcast channel where approved posts are published.
-BROADCAST_CHANNEL_ID = int(os.getenv("BROADCAST_CHANNEL_ID"))
+# Accepts a numeric id (-100…) OR a @username. For a PRIVATE channel a bot often can't
+# resolve it by numeric id (entity not cached) — prefer the @username if the channel has one.
+def _chat(raw):
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return raw  # @username
+
+
+BROADCAST_CHANNEL_ID = _chat(os.getenv("BROADCAST_CHANNEL_ID"))

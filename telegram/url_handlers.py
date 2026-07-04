@@ -1,7 +1,10 @@
 """Generate → confirm → adjust flow for a dropped item/link."""
 from telethon import events
 from . import config
-from .prompts import SYSTEM_PROMPT, _build_draft_instruction
+from .prompts import (
+    SYSTEM_PROMPT, _build_draft_instruction,
+    SHORT_ALERT_TEMPLATE, LONG_ALERT_TEMPLATE, ALERT_VARIANT_SYSTEM, _build_alert_instruction,
+)
 from .format import fit_telegram_text
 from .buttons import make_url_confirm_buttons, make_url_adjust_buttons, make_url_publish_buttons
 from .publish import send_preview, show_loading, restore_buttons
@@ -30,7 +33,8 @@ def register_url_handlers(bot):
             return
 
         # ── Generate a draft from the dropped item/link ──
-        if data == "url_read":
+        # url_read = domyślny „Generuj post"; gen_short / gen_long = szybkie warianty (osobne szablony).
+        if data in ("url_read", "gen_short", "gen_long"):
             post = pending_adoption.get(msg_id)
             if not post:
                 await event.answer("Post wygasł", alert=True)
@@ -57,8 +61,23 @@ def register_url_handlers(bot):
                 article_text = post.get("original_text", "")
                 source = post.get("source", "ingest")
 
-            instruction = _build_draft_instruction(post.get("user_instruction", ""))
-            draft = await ask_claude(article_text, source, instruction, system_prompt=SYSTEM_PROMPT)
+            # Wariant decyduje o szablonie i system prompcie. Domyślny „Generuj post"
+            # (url_read) zachowuje dotychczasowe zachowanie bez zmian.
+            user_instruction = post.get("user_instruction", "")
+            if data == "gen_short":
+                instruction = _build_alert_instruction(SHORT_ALERT_TEMPLATE, user_instruction)
+                system_prompt = ALERT_VARIANT_SYSTEM
+                variant_tag = "short_alert"
+            elif data == "gen_long":
+                instruction = _build_alert_instruction(LONG_ALERT_TEMPLATE, user_instruction)
+                system_prompt = ALERT_VARIANT_SYSTEM
+                variant_tag = "long_alert"
+            else:
+                instruction = _build_draft_instruction(user_instruction)
+                system_prompt = SYSTEM_PROMPT
+                variant_tag = "url_draft"
+
+            draft = await ask_claude(article_text, source, instruction, system_prompt=system_prompt)
             if draft.startswith("Błąd Claude"):
                 await restore_buttons(bot, msg_id)
                 await event.answer("Błąd generowania posta", alert=True)
@@ -73,8 +92,10 @@ def register_url_handlers(bot):
                 "phase": "confirm",
                 "article_url": post.get("article_url", ""),
                 "user_instruction": post.get("user_instruction", ""),
+                "title": post.get("title", ""),
+                "image": post.get("image", ""),
                 "phase1_msg_id": msg_id,
-                "edit_chain": ["url_draft"],
+                "edit_chain": [variant_tag],
             }
             sent = await send_preview(bot, draft, make_url_confirm_buttons(), reply_to=msg_id)
             pending_posts[sent.id] = track_post(pending_posts, url_post, sent_id=sent.id)

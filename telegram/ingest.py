@@ -3,9 +3,14 @@
 Everything funnels into a Phase-1 message carrying the 🔍 Generuj post button.
 The future GIS crawler will call `ingest_alert()` the same way.
 """
+import html
+
 from telethon import events
+
+import config as root_config
 from . import config
 from .buttons import make_generate_button
+from .publish import send_alert_photo
 from core.article import has_url, apply_url_fields
 from core.state import pending_adoption, track_post
 
@@ -24,6 +29,33 @@ def _phase1_message(post: dict) -> str:
             line += f"\n📝 Uwaga: {post['user_instruction']}"
         return line + "\n\nKliknij, aby wygenerować post."
     return "🆕 Nowy alert (tekst). Kliknij, aby wygenerować post."
+
+
+async def ingest_warning(bot, *, title: str, url: str, text: str, date_str: str = ""):
+    """Handoff from the GIS crawler: DM the alert image + summary + 🔍 Generuj button.
+
+    The crawler already fetched the article text, so it's stored as original_text and the
+    draft is generated from it directly (no re-fetch)."""
+    caption = (
+        "🆕 <b>Nowe ostrzeżenie GIS</b>\n"
+        f"<b>{html.escape(title)}</b>\n"
+        + (f"📅 {html.escape(date_str)}\n" if date_str else "")
+        + (f"🔗 {html.escape(url)}\n" if url else "")
+        + "\nWygenerować post?"
+    )
+    sent = await send_alert_photo(bot, caption, make_generate_button())
+    post = {
+        "original_text": text,
+        "source": url or "GIS",
+        "has_url": False,
+        "article_url": "",  # tekst mamy z crawlera — url_read użyje original_text
+        "user_instruction": "",
+        "title": title,
+        "image": root_config.ALERT_IMAGE,
+    }
+    pending_adoption[sent.id] = track_post(pending_adoption, post, sent_id=sent.id)
+    print(f"[QUEUE_INGEST] {title[:60]}")
+    return sent
 
 
 async def ingest_alert(bot, text: str, *, source: str = "ingest"):

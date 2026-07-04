@@ -32,6 +32,8 @@ def _serialize_post(post):
         "has_url": bool(post.get("has_url", False)),
         "article_url": post.get("article_url", ""),
         "user_instruction": post.get("user_instruction", ""),
+        "title": post.get("title", ""),
+        "image": post.get("image", ""),
         "platform": post.get("platform", ""),
         "phase": post.get("phase", ""),
         "phase1_msg_id": post.get("phase1_msg_id"),

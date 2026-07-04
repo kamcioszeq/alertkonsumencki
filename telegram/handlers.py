@@ -1,12 +1,19 @@
 """Draft editing: rephrase styles, manual edit, publish, reject."""
 from telethon import events
 from . import config
-from .prompts import SYSTEM_PROMPT, REPHRASE_INSTRUCTIONS, REPHRASE_LABELS, STYLE_NAMES
-from .buttons import make_url_adjust_buttons
+from .prompts import (
+    SYSTEM_PROMPT, REPHRASE_INSTRUCTIONS, REPHRASE_LABELS,
+    SHORTEN_INSTRUCTIONS, SHORTEN_LABELS, STYLE_NAMES,
+)
+from .buttons import make_url_adjust_buttons, make_shorten_buttons
 from .format import fit_telegram_text
 from .publish import send_preview, publish_to_channel, show_loading
 from core.claude import ask_claude
 from core.state import pending_posts, track_post, save_state
+
+# Rephrase + percentage-shorten share the same regenerate flow.
+ADJUST_INSTRUCTIONS = {**REPHRASE_INSTRUCTIONS, **SHORTEN_INSTRUCTIONS}
+ADJUST_LABELS = {**REPHRASE_LABELS, **SHORTEN_LABELS}
 
 
 def register_handlers(bot):
@@ -26,7 +33,17 @@ def register_handlers(bot):
             await event.answer("Publikuję...")
             await show_loading(event, "Publikuję...")
             print("[PUBLISH] Publikuję na kanale broadcast...")
-            await publish_to_channel(bot, post["text"])
+            try:
+                await publish_to_channel(bot, post["text"], image=post.get("image"))
+            except Exception as e:
+                print(f"[PUBLISH] Błąd: {e}")
+                await event.answer(f"Nie udało się opublikować: {e}", alert=True)
+                # przywróć przyciski, żeby można było poprawić/ponowić
+                try:
+                    await (await event.get_message()).edit(buttons=make_url_adjust_buttons())
+                except Exception:
+                    pass
+                return
             original_msg = await event.get_message()
             await original_msg.edit(original_msg.text + "\n\n✅ OPUBLIKOWANO", buttons=None)
             post["platform"] = "published"
@@ -52,8 +69,19 @@ def register_handlers(bot):
             )
             return
 
-        if data in REPHRASE_INSTRUCTIONS:
-            label = REPHRASE_LABELS[data]
+        # ── Shorten submenu (toggle buttons in place, no regen) ──
+        if data == "shorten_menu":
+            await event.answer("O ile skrócić?")
+            await (await event.get_message()).edit(buttons=make_shorten_buttons())
+            return
+
+        if data == "shorten_back":
+            await event.answer("Powrót")
+            await (await event.get_message()).edit(buttons=make_url_adjust_buttons())
+            return
+
+        if data in ADJUST_INSTRUCTIONS:
+            label = ADJUST_LABELS[data]
             await event.answer(f"Przerabiam ({label})...")
             await show_loading(event, f"{label}...")
             print(f"[{label}] Przerabiam post...")
@@ -67,8 +95,10 @@ def register_handlers(bot):
                     "ZACHOWAJ charakter poprzednich edycji, tylko zastosuj nowe polecenie.\n\n"
                 )
 
-            instruction = style_context + REPHRASE_INSTRUCTIONS[data] + post["text"]
-            rewritten = await ask_claude(post["original_text"], post["source"], instruction,
+            # Operujemy na AKTUALNYM drafcie (nie na surowym artykule) — inaczej model
+            # dostaje dwa teksty i potrafi opisać co zrobi zamiast zwrócić gotowy post.
+            instruction = style_context + ADJUST_INSTRUCTIONS[data]
+            rewritten = await ask_claude(post["text"], post["source"], instruction,
                                          system_prompt=SYSTEM_PROMPT)
             rewritten = fit_telegram_text(rewritten)
 
@@ -109,8 +139,8 @@ def register_handlers(bot):
         else:
             await event.reply("Przerabiam...")
             new_text = await ask_claude(
-                post["original_text"], post["source"],
-                f"{text}\n\nOto tekst do przerobienia:\n\n{post['text']}",
+                post["text"], post["source"],
+                f"Zastosuj do powyższego alertu polecenie: {text}. Zwróć wyłącznie gotowy post.",
                 system_prompt=SYSTEM_PROMPT,
             )
             post["text"] = fit_telegram_text(new_text)

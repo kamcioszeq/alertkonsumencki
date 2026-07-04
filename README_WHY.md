@@ -32,7 +32,7 @@ flowchart TD
   C -->|click 🔍| D[url_read: fetch_article via trafilatura]
   D --> E[ask_claude + consumer-alert SYSTEM_PROMPT → draft]
   E --> F[Draft in internal chat: ✅ OK / Dostosuj / Odrzuć]
-  F -->|Dostosuj| G[Rephrase: Bardziej formalny / Mniej formalny / Techniczny / Sugestia / Edytuj]
+  F -->|Dostosuj| G[Adjust: Bardziej formalny / Mniej formalny / Techniczny / Sugestia / Skróć 20-70% / Edytuj]
   G --> F
   F -->|✅ OK → Publikuj| H[publish_to_channel → BROADCAST_CHANNEL_ID]
   F -->|Odrzuć| X[Discard]
@@ -76,15 +76,24 @@ flowchart LR
 (drafts under review) — and mirrors every change to `state.json`. If the bot restarts, in-flight
 drafts survive (Telethon message objects are runtime-only and simply re-fetched on demand).
 
-## Future: automatic GIS crawler
+## GIS crawler → Telegram handoff
 
-Today a human drops the link. Later, a crawler that watches GIS/gov.pl will call the same
-`ingest_alert()` entry point when a new notification appears — so the review/publish machinery
-downstream doesn't change at all.
+The crawler and the bot are **separate processes** (likely separate containers). Only the bot
+talks to Telegram interactively (it owns the button state), so the crawler doesn't message
+Telegram directly — it drops new warnings into a **file queue** (`queue/`, a shared volume). The
+bot watches that queue and, for each new warning, DMs you the alert image + a "Wygenerować post?"
+prompt. This keeps the handoff decoupled and restart-safe, and the click-to-generate/edit state
+lives entirely in the bot.
 
 ```mermaid
 flowchart LR
-  crawler[GIS crawler · future] --> ingest[ingest_alert]
-  manual[Reviewer drops link · today] --> ingest
-  ingest --> review[review + publish flow]
+  crawler[GIS crawler] -->|new warning JSON| queue[(queue/ dir)]
+  manual[Reviewer drops link] --> ingest
+  queue -->|bot watches| ingest[ingest → 🔍 Generuj?]
+  ingest --> review[generate · edit · publish]
+  review -->|image + text| channel[broadcast channel]
 ```
+
+The generated draft stays a **text message** (easy to edit/regenerate); the static
+`assets/alert.png` is attached to the handoff message and to the final published post (as a photo
+caption when ≤1024 chars, otherwise image + text).

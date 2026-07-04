@@ -17,6 +17,28 @@ services:
     environment:
       # keep state.json inside the persisted session volume so it survives redeploys
       - STATE_FILE=/app/session/state.json
+      - QUEUE_DIR=/app/queue
     volumes:
       - ./session:/app/session
+      - ./queue:/app/queue   # handoff od crawlera
+    restart: unless-stopped
+
+  # Mini-serwis: cyklicznie sprawdza ostrzeżenia GIS. Współdzieli obraz z botem,
+  # ale to osobny kontener — działa równolegle i niezależnie.
+  crawler:
+    container_name: alertkonsumencki_crawler
+    image: localhost/alertkonsumencki_bot:latest
+    build:
+      context: .
+      dockerfile: Containerfile
+    command: ["python", "-m", "crawler"]
+    env_file: .env
+    environment:
+      - CRAWLER_INTERVAL=${CRAWLER_INTERVAL:-600}
+      - CRAWLER_OUTPUT_DIR=/app/gis_alerts
+      - CRAWLER_STATE_FILE=/app/gis_alerts/crawler_state.json
+      - QUEUE_DIR=/app/queue
+    volumes:
+      - ./gis_alerts:/app/gis_alerts
+      - ./queue:/app/queue   # handoff do bota
     restart: unless-stopped
