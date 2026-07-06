@@ -25,6 +25,7 @@ def register_url_handlers(bot):
 
         msg_id = event.message_id
         data = event.data.decode()
+        print(f"[CALLBACK][url] sender={event.sender_id} msg_id={msg_id} data={data}")
 
         if data == "phase1_menu":
             await handle_phase1_menu(bot, event, msg_id)

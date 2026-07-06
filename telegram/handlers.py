@@ -35,6 +35,7 @@ def register_handlers(bot):
 
         msg_id = event.message_id
         data = event.data.decode()
+        print(f"[CALLBACK][edit] sender={event.sender_id} msg_id={msg_id} data={data}")
 
         post = pending_posts.get(msg_id)
 
