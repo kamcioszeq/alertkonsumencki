@@ -1,8 +1,11 @@
 """Draft editing: rephrase styles, manual edit, publish, reject."""
 from telethon import events
+
+import config as root_config
+from core.banners import apply_banner_from_llm
 from . import config
 from .prompts import (
-    SYSTEM_PROMPT, REPHRASE_INSTRUCTIONS, REPHRASE_LABELS,
+    SYSTEM_PROMPT, ALERT_VARIANT_SYSTEM, REPHRASE_INSTRUCTIONS, REPHRASE_LABELS,
     SHORTEN_INSTRUCTIONS, SHORTEN_LABELS, STYLE_NAMES,
 )
 from .buttons import make_url_adjust_buttons, make_shorten_buttons
@@ -14,6 +17,13 @@ from core.state import pending_posts, track_post, save_state
 # Rephrase + percentage-shorten share the same regenerate flow.
 ADJUST_INSTRUCTIONS = {**REPHRASE_INSTRUCTIONS, **SHORTEN_INSTRUCTIONS}
 ADJUST_LABELS = {**REPHRASE_LABELS, **SHORTEN_LABELS}
+
+
+def _system_for(post):
+    """Edycje wariantów Krótki/Długi alert zachowują ich styl i hook (ALERT_VARIANT_SYSTEM);
+    domyślny post (url_draft) zostaje przy SYSTEM_PROMPT."""
+    variant = (post.get("edit_chain") or ["url_draft"])[0]
+    return ALERT_VARIANT_SYSTEM if variant in ("short_alert", "long_alert") else SYSTEM_PROMPT
 
 
 def register_handlers(bot):
@@ -34,7 +44,9 @@ def register_handlers(bot):
             await show_loading(event, "Publikuję...")
             print("[PUBLISH] Publikuję na kanale broadcast...")
             try:
-                await publish_to_channel(bot, post["text"], image=post.get("image"))
+                await publish_to_channel(
+                    bot, post["text"], image=post.get("image") or root_config.ALERT_IMAGE,
+                )
             except Exception as e:
                 print(f"[PUBLISH] Błąd: {e}")
                 await event.answer(f"Nie udało się opublikować: {e}", alert=True)
@@ -98,14 +110,18 @@ def register_handlers(bot):
             # Operujemy na AKTUALNYM drafcie (nie na surowym artykule) — inaczej model
             # dostaje dwa teksty i potrafi opisać co zrobi zamiast zwrócić gotowy post.
             instruction = style_context + ADJUST_INSTRUCTIONS[data]
-            rewritten = await ask_claude(post["text"], post["source"], instruction,
-                                         system_prompt=SYSTEM_PROMPT)
+            rewritten_raw = await ask_claude(post["text"], post["source"], instruction,
+                                         system_prompt=_system_for(post))
+            rewritten, banner = apply_banner_from_llm(
+                rewritten_raw, fallback=post.get("image") or root_config.ALERT_IMAGE,
+            )
             rewritten = fit_telegram_text(rewritten)
 
             anchor = post.get("phase1_msg_id")
             sent = await send_preview(bot, rewritten, make_url_adjust_buttons(), reply_to=anchor)
 
             post["text"] = rewritten
+            post["image"] = banner
             post.setdefault("edit_chain", []).append(data)
             post["phase"] = "adjust"
             pending_posts.pop(msg_id, None)
@@ -138,12 +154,16 @@ def register_handlers(bot):
             await event.reply("Tekst zaktualizowany.")
         else:
             await event.reply("Przerabiam...")
-            new_text = await ask_claude(
+            new_text_raw = await ask_claude(
                 post["text"], post["source"],
                 f"Zastosuj do powyższego alertu polecenie: {text}. Zwróć wyłącznie gotowy post.",
-                system_prompt=SYSTEM_PROMPT,
+                system_prompt=_system_for(post),
+            )
+            new_text, banner = apply_banner_from_llm(
+                new_text_raw, fallback=post.get("image") or root_config.ALERT_IMAGE,
             )
             post["text"] = fit_telegram_text(new_text)
+            post["image"] = banner
 
         anchor = post.get("phase1_msg_id")
         sent = await send_preview(bot, post["text"], make_url_adjust_buttons(), reply_to=anchor)

@@ -10,33 +10,42 @@ def make_generate_button():
     return [
         [Button.inline("🔍 Generuj post", b"url_read")],
         [Button.inline("Krótki alert", b"gen_short"), Button.inline("Długi alert", b"gen_long")],
+        [Button.inline("📘 Generuj FB", b"gen_fb")],
         [Button.inline("Odrzuć", b"reject")],
     ]
 
 
 def make_url_confirm_buttons():
-    """Draft just generated — accept, adjust, or reject."""
-    return [[
-        Button.inline("✅ OK", b"url_ok"),
-        Button.inline("Dostosuj", b"url_adjust"),
-        Button.inline("Odrzuć", b"pub_no"),
-    ]]
+    """Draft just generated — accept, adjust, reject, or start FB path."""
+    return [
+        [Button.inline("FB", b"fb_start")],
+        [
+            Button.inline("✅ OK", b"url_ok"),
+            Button.inline("Dostosuj", b"url_adjust"),
+            Button.inline("Odrzuć", b"pub_no"),
+        ],
+    ]
 
 
 def make_url_publish_buttons():
     """Draft accepted — ready to publish."""
-    return [[
-        Button.inline("Publikuj", b"pub_yes"),
-        Button.inline("Odrzuć", b"pub_no"),
-    ]]
+    return [
+        [Button.inline("FB", b"fb_start")],
+        [
+            Button.inline("Publikuj", b"pub_yes"),
+            Button.inline("Odrzuć", b"pub_no"),
+        ],
+    ]
 
 
 def make_url_adjust_buttons():
     """Draft adjust menu — the 4 custom rephrase styles + shorten/publish/reject/edit."""
     return [
+        [Button.inline("FB", b"fb_start")],
         [Button.inline("Publikuj", b"pub_yes"), Button.inline("Odrzuć", b"pub_no")],
         [Button.inline("Bardziej formalny", b"formal"), Button.inline("Mniej formalny", b"informal")],
         [Button.inline("Techniczny", b"technical"), Button.inline("Sugestia", b"suggestion")],
+        [Button.inline("✍️ Gramatyka", b"grammar"), Button.inline("🔁 Powtórz", b"powtorz")],
         [Button.inline("Skróć", b"shorten_menu"), Button.inline("Edytuj", b"pub_edit")],
     ]
 

@@ -23,19 +23,24 @@ async def ask_claude(text: str, source: str, instruction: str, *, system_prompt:
     if system_prompt is not None:
         body["system"] = system_prompt
 
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": config.CLAUDE_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json=body,
-            timeout=30,
-        )
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": config.CLAUDE_API_KEY,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json=body,
+                timeout=30,
+            )
+        data = response.json()
+    except httpx.HTTPError as e:
+        return f"Błąd Claude: brak połączenia z API ({type(e).__name__})"
+    except Exception as e:
+        return f"Błąd Claude: {type(e).__name__}: {e}"
 
-    data = response.json()
     if data.get("content"):
         texts = [b["text"] for b in data["content"] if b["type"] == "text"]
         return "\n".join(texts)

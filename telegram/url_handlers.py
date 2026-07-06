@@ -1,5 +1,8 @@
 """Generate → confirm → adjust flow for a dropped item/link."""
 from telethon import events
+
+import config as root_config
+from core.banners import apply_banner_from_llm
 from . import config
 from .prompts import (
     SYSTEM_PROMPT, _build_draft_instruction,
@@ -34,7 +37,7 @@ def register_url_handlers(bot):
 
         # ── Generate a draft from the dropped item/link ──
         # url_read = domyślny „Generuj post"; gen_short / gen_long = szybkie warianty (osobne szablony).
-        if data in ("url_read", "gen_short", "gen_long"):
+        if data in ("url_read", "gen_short", "gen_long", "gen_fb"):
             post = pending_adoption.get(msg_id)
             if not post:
                 await event.answer("Post wygasł", alert=True)
@@ -61,6 +64,20 @@ def register_url_handlers(bot):
                 article_text = post.get("original_text", "")
                 source = post.get("source", "ingest")
 
+            # ── FB wprost z oryginału (osobny post) — nie tworzy draftu TG ──
+            if data == "gen_fb":
+                from facebook.handlers import generate_fb_from_source
+                sent, _ = await generate_fb_from_source(
+                    bot, article_text=article_text, source=source,
+                    image=post.get("image", ""), anchor=msg_id,
+                )
+                await restore_buttons(bot, msg_id)
+                if not sent:
+                    await event.answer("Błąd generowania wersji FB", alert=True)
+                    return
+                print(f"[URL_READ] FB draft gotowy msg_id={sent.id}")
+                return
+
             # Wariant decyduje o szablonie i system prompcie. Domyślny „Generuj post"
             # (url_read) zachowuje dotychczasowe zachowanie bez zmian.
             user_instruction = post.get("user_instruction", "")
@@ -77,11 +94,14 @@ def register_url_handlers(bot):
                 system_prompt = SYSTEM_PROMPT
                 variant_tag = "url_draft"
 
-            draft = await ask_claude(article_text, source, instruction, system_prompt=system_prompt)
-            if draft.startswith("Błąd Claude"):
+            draft_raw = await ask_claude(article_text, source, instruction, system_prompt=system_prompt)
+            if draft_raw.startswith("Błąd Claude"):
                 await restore_buttons(bot, msg_id)
                 await event.answer("Błąd generowania posta", alert=True)
                 return
+            draft, banner = apply_banner_from_llm(
+                draft_raw, fallback=post.get("image") or root_config.ALERT_IMAGE,
+            )
             draft = fit_telegram_text(draft)
 
             url_post = {
@@ -93,7 +113,7 @@ def register_url_handlers(bot):
                 "article_url": post.get("article_url", ""),
                 "user_instruction": post.get("user_instruction", ""),
                 "title": post.get("title", ""),
-                "image": post.get("image", ""),
+                "image": banner,
                 "phase1_msg_id": msg_id,
                 "edit_chain": [variant_tag],
             }

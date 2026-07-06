@@ -55,11 +55,11 @@ async def send_alert_photo(bot, caption, buttons, *, reply_to=None):
 
 
 async def publish_to_channel(bot, text, *, image=None):
-    """Publish the final post to the broadcast channel, with the alert image when available.
+    """Publish the final post to the broadcast channel, always with alert.png when available.
 
     Telegram photo captions max out at 1024 chars, so longer posts go as image + text message.
     """
-    img = image if (image and os.path.exists(image)) else None
+    img = image if (image and os.path.exists(image)) else _alert_image()
     if not img:
         await bot.send_message(config.BROADCAST_CHANNEL_ID, text, parse_mode="html")
         return

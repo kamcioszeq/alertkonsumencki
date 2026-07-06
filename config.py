@@ -24,3 +24,9 @@ QUEUE_DIR = os.getenv("QUEUE_DIR", "queue")
 QUEUE_POLL_INTERVAL = int(os.getenv("QUEUE_POLL_INTERVAL", "15"))   # jak często bot sprawdza kolejkę (s)
 # Statyczny obrazek dołączany do ostrzeżeń i publikowanych postów.
 ALERT_IMAGE = os.getenv("ALERT_IMAGE", "assets/alert.png")
+# Obrazek (QR) dołączany do posta PROMO zapraszającego do społeczności.
+PROMO_IMAGE = os.getenv("PROMO_IMAGE", "assets/qr.png")
+
+# ─── Facebook (Graph API) ───────────────────────────────────
+FB_PAGE_ACCESS_TOKEN = os.getenv("FB_PAGE_ACCESS_TOKEN", "")
+FB_PAGE_ID = os.getenv("FB_PAGE_ID", "")

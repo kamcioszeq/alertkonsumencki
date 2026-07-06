@@ -60,8 +60,10 @@ async def ingest_warning(bot, *, title: str, url: str, text: str, date_str: str 
 
 async def ingest_alert(bot, text: str, *, source: str = "ingest"):
     """Register a new item and post the 🔍 Generuj button in the internal chat."""
-    post = {"original_text": text, "source": source, "has_url": False,
-            "article_url": "", "user_instruction": ""}
+    post = {
+        "original_text": text, "source": source, "has_url": False,
+        "article_url": "", "user_instruction": "", "image": root_config.ALERT_IMAGE,
+    }
     apply_url_fields(post, text)
     sent = await bot.send_message(
         config.INTERNAL_CHAT_ID, _phase1_message(post), buttons=make_generate_button(),
@@ -80,8 +82,10 @@ def register_ingest(bot):
         if event.sender_id not in config.REVIEWER_IDS:
             return
         text = event.text.strip()
-        post = {"original_text": text, "source": "link", "has_url": False,
-                "article_url": "", "user_instruction": ""}
+        post = {
+            "original_text": text, "source": "link", "has_url": False,
+            "article_url": "", "user_instruction": "", "image": root_config.ALERT_IMAGE,
+        }
         apply_url_fields(post, text)
         sent = await bot.send_message(
             config.INTERNAL_CHAT_ID, _phase1_message(post),

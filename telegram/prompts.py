@@ -1,4 +1,5 @@
 """Telegram consumer-alert prompts and rephrase styles."""
+from core.banners import BANNER_CLASSIFICATION_PROMPT
 from .format import telegram_limit_instruction
 
 SYSTEM_PROMPT = (
@@ -13,6 +14,8 @@ SYSTEM_PROMPT = (
     "\n"
     "Formatowanie: HTML dla Telegrama. Używaj <b>bold</b> do pogrubień. "
     "NIGDY nie używaj Markdown (**bold**, _italic_) ani kursywy. "
+    "Etykiety sekcji zakończone dwukropkiem (np. Dotyczy:, Ryzyko:, Co zrobić:, Zalecenie:, "
+    "Partia:, Termin:, Źródło:) pisz pogrubione: <b>Etykieta:</b>. "
     "Zalecenie dla konsumenta umieść w <blockquote>tekst</blockquote>. "
     "Blockquote rezerwuj WYŁĄCZNIE na to jedno zalecenie — nie wstawiaj tam surowych zdań "
     "ze źródła.\n"
@@ -37,8 +40,9 @@ SYSTEM_PROMPT = (
     "wycofania”), adresy, powtórzenia i lanie wody. Istotne fakty — tak; wypełniacze — nie.\n"
     "\n"
     "STOPKA — DOKŁADNIE JEDNA LINIA na samym końcu, nic po niej:\n"
-    "<b>Alert konsumencki</b> | @alertkonsumencki | wycofane.pl\n"
+    "<b>Alert konsumencki</b> | @alertkonsumencki\n"
     "Zawsze pisz dokładnie '@alertkonsumencki'."
+    + BANNER_CLASSIFICATION_PROMPT
 )
 
 URL_DRAFT_INSTRUCTION = (
@@ -65,9 +69,15 @@ def _build_draft_instruction(user_instruction: str, has_media: bool = False) -> 
 ALERT_VARIANT_SYSTEM = (
     "Jesteś redaktorem ostrzeżeń konsumenckich. Piszesz po polsku, rzeczowo. "
     "Formatuj dla Telegrama w HTML: pogrubienia jako <b>…</b> (NIE **…**), nie używaj Markdown. "
+    "Każdą etykietę sekcji zakończoną dwukropkiem (Dotyczy:, Ryzyko:, Kto powinien uważać:, "
+    "Co zrobić:, Zalecenie:, Partia:, Termin:, Szczegóły partii:, Źródło:, Oficjalny komunikat:) "
+    "pisz pogrubioną: <b>Etykieta:</b>. "
+    "Post ZAWSZE zaczyna się od mocnego, przyciągającego HOOKA (pierwsza linia) i to w NIM są "
+    "ikony ⚠️ + adaptacyjna — NIE przy tytule. Przy KAŻDEJ edycji zachowaj ten hook na samej górze. "
     "Korzystaj wyłącznie z podanych informacji — nie wymyślaj danych. "
     "Zwróć wyłącznie gotowy post, bez komentarza i bez opisu, co robisz. "
     "Na końcu dodaj stopkę w osobnej linii: <b>Alert konsumencki</b> | @alertkonsumencki"
+    + BANNER_CLASSIFICATION_PROMPT
 )
 
 # Wspólne reguły doboru „adaptacyjnej" ikony w nagłówku (obok ⚠️).
@@ -79,15 +89,18 @@ napoje → 🥤; żywność dla dzieci → 👶; lek/suplement → 💊; kosmety
 skażenie mikrobiologiczne → 🦠; ciało obce (szkło/plastik/metal) → 🔎; alergen → 🌾/🥜/🥛; nieznane → 📦.
 Zasady: dokładnie jedna ikona adaptacyjna; jeśli gluten/mąka/pieczywo/zboża → 🌾;
 mikrobiologia → 🦠; zanieczyszczenie fizyczne (szkło/plastik/metal) → 🔎; kategoria niejasna → 📦.
-Bez ikon śmiesznych, dziecinnych ani przesadnie dramatycznych. Format nagłówka:
-⚠️ [adaptive icon] [Produkt] — [główne ryzyko]
+Bez ikon śmiesznych, dziecinnych ani przesadnie dramatycznych.
+WAŻNE: ikony (⚠️ + adaptacyjna) umieść w LINII HOOK (pierwsza linia), NIE przy tytule.
+Format hooka: ⚠️ [adaptive icon] [mocne, przyciągające zdanie]
 """
 
 SHORT_ALERT_TEMPLATE = """Generate a short Polish consumer alert based only on the provided source text.
 
 Rules:
 - Keep it concise.
-- Use a strong first line.
+- Start with a strong attention-grabbing (BOLD) HOOK line (imperative + urgency), e.g.
+  „Nie spożywaj tego bigosu! Pilne ostrzeżenie dla klientów [sieć/sklep]."
+  Name the issuing authority (e.g. GIS) ONLY if it appears in the source; never invent it.
 - Include product name.
 - Include the main risk.
 - Include who should avoid it, if relevant.
@@ -96,64 +109,71 @@ Rules:
 - Do not invent missing information.
 - Do not use bureaucratic language.
 - Do not overuse emojis.
-- Use max 1 warning icon and max 1 adaptive topic icon in the headline.
+- Use max 1 warning icon and max 1 adaptive topic icon — in the HOOK line (first line), NOT in the title.
 - Suitable for Facebook preview, Telegram alert or quick notification.
 
-Headline format:
-⚠️ [adaptive icon] [Product] — [main risk]
+Hook format (first line, WITH the icons):
+⚠️ [adaptive icon] [strong attention-grabbing sentence]
 
 Preferred structure:
 
-⚠️ [adaptive icon] [Product] — [main risk]
+⚠️ [adaptive icon] <b>[HOOK — mocne, przyciągające zdanie, np. „Nie spożywaj tego bigosu! Pilne ostrzeżenie dla klientów Biedronki."]</b>
 
-Dotyczy: [product name, size, producer if available]
+<b>[Product] — [main risk]</b>
+
+<b>Dotyczy:</b> [product name, size, producer if available]
 
 [Short explanation of the risk and who is affected.]
 
-Co zrobić: [clear recommendation]
+<b>Co zrobić:</b> [clear recommendation]
 
-Partia: [batch if available] | Termin: [expiry date if available]
+<b>Partia:</b> [batch if available] | <b>Termin:</b> [expiry date if available]
 
 If some data is missing, omit it or write "nie podano" only where needed.
+Every section label ending with a colon must be bold: <b>Label:</b>
 """ + _ADAPTIVE_ICON_RULES
 
 LONG_ALERT_TEMPLATE = """Generate a full Polish consumer alert based only on the provided source text.
 
 Rules:
 - Make it attention-grabbing but factual.
+- Start with a strong attention-grabbing (BOLD) HOOK line (imperative + urgency), e.g.
+  „Nie spożywaj tego bigosu! GIS wydał pilny komunikat dla klientów [sieć/sklep]."
+  Name the issuing authority (e.g. GIS) ONLY if it appears in the source; never invent it.
 - Use short paragraphs.
 - Use consumer-friendly Polish.
 - Avoid bureaucratic wording.
 - Do not exaggerate.
 - Do not invent missing information.
 - Keep all factual details from the source.
-- Use max 1 warning icon and max 1 adaptive topic icon in the headline.
+- Use max 1 warning icon and max 1 adaptive topic icon — in the HOOK line (first line), NOT in the title.
 - Do not overuse emojis elsewhere.
 - Important data can be bolded (use <b>…</b> for Telegram).
 
 Use this exact structure:
 
-⚠️ [adaptive icon] [Strong headline with product + risk]
+⚠️ [adaptive icon] <b>[HOOK — mocne zdanie, np. „Nie spożywaj tego bigosu! GIS wydał pilny komunikat dla klientów Biedronki."]</b>
 
-Dotyczy: <b>[product name, size, producer]</b>
+<b>[Strong headline: product + risk]</b>
 
-Ryzyko: [short explanation of the hazard]
+<b>Dotyczy:</b> <b>[product name, size, producer]</b>
 
-Kto powinien uważać: [affected consumers]
+<b>Ryzyko:</b> [short explanation of the hazard]
 
-Co zrobić: [clear recommendation]
+<b>Kto powinien uważać:</b> [affected consumers]
 
-Szczegóły partii:
-Partia: <b>[batch number if available]</b>
-Data minimalnej trwałości / termin ważności: <b>[expiry date if available]</b>
+<b>Co zrobić:</b> [clear recommendation]
 
-Źródło / wycofanie: [authority, producer or responsible entity if available]
+<b>Szczegóły partii:</b>
+<b>Partia:</b> <b>[batch number if available]</b>
+<b>Data minimalnej trwałości / termin ważności:</b> <b>[expiry date if available]</b>
 
-Optional quote support:
-If the source text contains a short useful official sentence, include:
-
-Oficjalny komunikat:
+Źródło ZAWSZE jako oficjalny komunikat instytucji — NIGDY „Wycofanie: GIS". Format:
+<b>Oficjalny komunikat:</b> „[instytucja, np. GIS — tylko jeśli występuje w źródle]"
+Jeśli w źródle jest krótkie, sensowne oficjalne zdanie — dodaj je zaraz pod spodem w cudzysłowie:
 "[exact short quote from the source]"
+
+Every section label ending with a colon must be bold: <b>Label:</b>
 
 Quote rules:
 - Use only exact text from the provided source.
@@ -178,28 +198,48 @@ REPHRASE_LABELS = {
     "informal": "MNIEJ FORMALNY",
     "technical": "TECHNICZNY",
     "suggestion": "SUGESTIA",
+    "grammar": "GRAMATYKA",
+    "powtorz": "POWTÓRZ",
 }
 
 _ONLY_POST = " Zwróć wyłącznie gotowy post — bez komentarza i bez opisu, co robisz."
 
+# Doklejane do KAŻDEJ edycji: tytuł/nagłówek zawsze musi wyjść po poprawnym polsku.
+_TITLE_FIX = (
+    " ZAWSZE popraw też tytuł/nagłówek: zachowaj jego sens, ale musi być po poprawnym polsku — "
+    "jeśli jest w innym języku lub błędny językowo, przetłumacz i zrephrasuj go na naturalny polski."
+)
+
 REPHRASE_INSTRUCTIONS = {
     "formal": (
         "Przeredaguj powyższy alert bardziej formalnie i oficjalnie — ton urzędowy, rzeczowy, "
-        "bezosobowy. Zachowaj nagłówek, wszystkie fakty i stopkę." + _ONLY_POST
+        "bezosobowy. Zachowaj wszystkie fakty i stopkę." + _TITLE_FIX + _ONLY_POST
     ),
     "informal": (
         "Przeredaguj powyższy alert mniej formalnie — prostszym, przystępnym językiem, "
-        "zrozumiałym dla każdego. Zachowaj fakty, nagłówek i stopkę." + _ONLY_POST
+        "zrozumiałym dla każdego. Zachowaj fakty i stopkę." + _TITLE_FIX + _ONLY_POST
     ),
     "technical": (
         "Uwypuklij w powyższym alercie szczegóły techniczne: pełna nazwa produktu, producent, "
-        "numer partii, daty, kod EAN, dokładny rodzaj zagrożenia. Zachowaj nagłówek i stopkę."
-        + _ONLY_POST
+        "numer partii, daty, kod EAN, dokładny rodzaj zagrożenia. Zachowaj stopkę."
+        + _TITLE_FIX + _ONLY_POST
     ),
     "suggestion": (
         "Dodaj do powyższego alertu wyraźne, praktyczne zalecenie dla konsumenta — co zrobić "
         "z produktem (np. nie spożywać, zwrócić do sklepu, zgłosić do sanepidu). "
-        "Zachowaj fakty, nagłówek i stopkę." + _ONLY_POST
+        "Zachowaj fakty i stopkę." + _TITLE_FIX + _ONLY_POST
+    ),
+    "grammar": (
+        "Popraw w powyższym alercie WYŁĄCZNIE błędy językowe: gramatyka, ortografia, "
+        "interpunkcja, odmiana, składnia i literówki w języku polskim. "
+        "NIE zmieniaj treści, faktów, kolejności, struktury, tonu ani długości. "
+        "Zachowaj bez zmian: wszystkie tagi <b>…</b>, emoji, <blockquote> i stopkę."
+        + _TITLE_FIX + _ONLY_POST
+    ),
+    "powtorz": (
+        "Napisz powyższy alert jeszcze raz w NOWEJ wersji — inne sformułowania i szyk zdań, "
+        "ten sam sens i wszystkie fakty. Zachowaj strukturę, nagłówek i stopkę."
+        + _TITLE_FIX + _ONLY_POST
     ),
 }
 
@@ -214,7 +254,7 @@ SHORTEN_INSTRUCTIONS = {
     key: (
         f"Skróć powyższy alert o około {pct}% (usuń mniej więcej {pct}% objętości tekstu). "
         "Zostaw najważniejsze fakty: produkt, zagrożenie, numer partii, zalecenie. "
-        "Zachowaj nagłówek i stopkę." + _ONLY_POST
+        "Zachowaj nagłówek i stopkę." + _TITLE_FIX + _ONLY_POST
     )
     for key, pct in (("short_20", 20), ("short_30", 30), ("short_50", 50), ("short_70", 70))
 }
@@ -227,6 +267,8 @@ STYLE_NAMES = {
     "informal": "uproszczony",
     "technical": "techniczny",
     "suggestion": "z rekomendacją",
+    "grammar": "po korekcie językowej",
+    "powtorz": "wersja powtórzona",
     "short_20": "skrócony o 20%",
     "short_30": "skrócony o 30%",
     "short_50": "skrócony o 50%",
