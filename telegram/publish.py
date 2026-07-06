@@ -3,6 +3,7 @@
 Drafts stay text-only (easy to edit/regenerate); the static alert image is attached to
 the handoff message and to the final published post.
 """
+import html
 import os
 
 from telethon import Button
@@ -69,6 +70,16 @@ async def publish_to_channel(bot, text, *, image=None):
     else:
         await bot.send_file(config.BROADCAST_CHANNEL_ID, img)
         await bot.send_message(config.BROADCAST_CHANNEL_ID, text, parse_mode="html")
+
+
+async def notify_reviewers(bot, message: str):
+    """Send an admin-style notification to the internal review chat."""
+    if not config.INTERNAL_CHAT_ID or not message:
+        return
+    try:
+        await bot.send_message(config.INTERNAL_CHAT_ID, message, parse_mode="html")
+    except Exception:
+        pass
 
 
 async def restore_buttons(bot, msg_id):

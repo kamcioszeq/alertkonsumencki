@@ -23,6 +23,9 @@ async def ask_claude(text: str, source: str, instruction: str, *, system_prompt:
     if system_prompt is not None:
         body["system"] = system_prompt
 
+    if not config.CLAUDE_API_KEY:
+        return "Błąd Claude: brak CLAUDE_API_KEY"
+
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -35,6 +38,13 @@ async def ask_claude(text: str, source: str, instruction: str, *, system_prompt:
                 json=body,
                 timeout=30,
             )
+        if response.status_code >= 400:
+            try:
+                data = response.json()
+                error_msg = data.get("error", {}).get("message", response.text)
+            except ValueError:
+                error_msg = response.text
+            return f"Błąd Claude: {response.status_code} {error_msg}"
         data = response.json()
     except httpx.HTTPError as e:
         return f"Błąd Claude: brak połączenia z API ({type(e).__name__})"

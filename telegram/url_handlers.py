@@ -1,4 +1,5 @@
 """Generate → confirm → adjust flow for a dropped item/link."""
+import html
 from telethon import events
 
 import config as root_config
@@ -10,7 +11,7 @@ from .prompts import (
 )
 from .format import fit_telegram_text
 from .buttons import make_url_confirm_buttons, make_url_adjust_buttons, make_url_publish_buttons
-from .publish import send_preview, show_loading, restore_buttons, handle_phase1_menu
+from .publish import send_preview, show_loading, restore_buttons, handle_phase1_menu, notify_reviewers
 from core.claude import ask_claude
 from core.article import fetch_article
 from core.state import pending_adoption, pending_posts, track_post, save_state
@@ -58,6 +59,12 @@ def register_url_handlers(bot):
                     print(f"[URL_READ] Błąd: {e}")
                     await restore_buttons(bot, msg_id)
                     await event.answer("Nie udało się odczytać artykułu", alert=True)
+                    await notify_reviewers(
+                        bot,
+                        html.escape(
+                            f"⚠️ Błąd pobierania artykułu: {post['article_url']}\n{e}"
+                        ),
+                    )
                     return
                 article_text = article["text"]
                 if article.get("title"):
@@ -102,6 +109,10 @@ def register_url_handlers(bot):
             if draft_raw.startswith("Błąd Claude"):
                 await restore_buttons(bot, msg_id)
                 await event.answer("Błąd generowania posta", alert=True)
+                await notify_reviewers(
+                    bot,
+                    html.escape(f"⚠️ Błąd Claude przy generowaniu posta: {draft_raw}\nŹródło: {source}"),
+                )
                 return
             draft, banner = apply_banner_from_llm(
                 draft_raw, fallback=post.get("image") or root_config.ALERT_IMAGE,

@@ -1,4 +1,5 @@
 """Draft editing: rephrase styles, manual edit, publish, reject."""
+import html
 from telethon import events
 
 import config as root_config
@@ -10,7 +11,7 @@ from .prompts import (
 )
 from .buttons import make_url_adjust_buttons, make_shorten_buttons, make_tg_published_buttons
 from .format import fit_telegram_text
-from .publish import send_preview, publish_to_channel, show_loading, restore_phase1_menu, handle_phase1_menu
+from .publish import send_preview, publish_to_channel, show_loading, restore_phase1_menu, handle_phase1_menu, notify_reviewers
 from core.claude import ask_claude
 from core.state import pending_posts, track_post, save_state
 
@@ -121,6 +122,13 @@ def register_handlers(bot):
             instruction = style_context + ADJUST_INSTRUCTIONS[data]
             rewritten_raw = await ask_claude(post["text"], post["source"], instruction,
                                          system_prompt=_system_for(post))
+            if rewritten_raw.startswith("Błąd Claude"):
+                await event.answer("Błąd modelu. Spróbuj ponownie później.", alert=True)
+                await notify_reviewers(
+                    bot,
+                    html.escape(f"⚠️ Błąd Claude przy edycji: {rewritten_raw}\nŹródło: {post.get('source', '')}"),
+                )
+                return
             rewritten, banner = apply_banner_from_llm(
                 rewritten_raw, fallback=post.get("image") or root_config.ALERT_IMAGE,
             )
@@ -168,6 +176,13 @@ def register_handlers(bot):
                 f"Zastosuj do powyższego alertu polecenie: {text}. Zwróć wyłącznie gotowy post.",
                 system_prompt=_system_for(post),
             )
+            if new_text_raw.startswith("Błąd Claude"):
+                await event.reply("Błąd modelu. Spróbuj ponownie później.")
+                await notify_reviewers(
+                    bot,
+                    html.escape(f"⚠️ Błąd Claude przy ręcznej edycji: {new_text_raw}\nŹródło: {post.get('source', '')}"),
+                )
+                return
             new_text, banner = apply_banner_from_llm(
                 new_text_raw, fallback=post.get("image") or root_config.ALERT_IMAGE,
             )

@@ -5,13 +5,13 @@
 # newsautomation — and newsautomation's own deploy never touches this one.
 #
 # Usage:
-#   ./deploy.sh            # build + start (detached)
+#   ./deploy.sh            # build + start + watch for local/git changes
 #   ./deploy.sh restart    # recreate the container (no rebuild)
 #   ./deploy.sh rebuild    # rebuild image + recreate
-#   ./deploy.sh logs         # follow bot logs
+#   ./deploy.sh down       # stop + remove this project only
+#   ./deploy.sh logs       # follow bot logs
 #   ./deploy.sh logs-crawler # follow GIS crawler logs
-#   ./deploy.sh down         # stop + remove (this project only)
-#   ./deploy.sh status       # show this project's containers
+#   ./deploy.sh status     # show this project's containers
 #
 set -euo pipefail
 
@@ -23,53 +23,173 @@ export COMPOSE_PROJECT_NAME=alertkonsumencki
 CONTAINER=alertkonsumencki_bot
 COMPOSE="podman-compose"
 
-# ── Tweakables ──────────────────────────────────────────────
-# Interwał crawlera GIS w sekundach (do czasu wyniesienia na osobny serwer).
+# ── Tweakables ──────────────────────────────────────────────────
+POLL_INTERVAL=5
 export CRAWLER_INTERVAL="${CRAWLER_INTERVAL:-600}"
 
-GREEN='\033[0;32m'; RED='\033[0;31m'; NC='\033[0m'
-log()   { echo -e "${GREEN}[alertkonsumencki]${NC} $1"; }
-error() { echo -e "${RED}[error]${NC} $1" >&2; }
+GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
+log()   { echo -e "${GREEN}[$(date +'%Y-%m-%d %H:%M:%S')]${NC} $1"; }
+error() { echo -e "${RED}[ERROR]${NC} $1" >&2; }
+info()  { echo -e "${YELLOW}[INFO]${NC} $1"; }
+
+LOG_PIDS=()
+start_logs() {
+    stop_logs
+    for svc in "$CONTAINER" alertkonsumencki_crawler; do
+        if podman container exists "$svc" >/dev/null 2>&1; then
+            podman logs -f --tail=100 "$svc" 2>&1 | sed "s/^/[$svc] /" &
+            LOG_PIDS+=("$!")
+        else
+            info "Container $svc is not present, skipping log tail."
+        fi
+    done
+}
+
+stop_logs() {
+    for pid in "${LOG_PIDS[@]}"; do
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+        fi
+    done
+    LOG_PIDS=()
+}
+
+follow_logs() {
+    start_logs
+}
+
+cleanup() {
+    stop_logs
+    exit 0
+}
+trap cleanup INT TERM
+
+get_mtime() {
+    find "$REPO_DIR" -maxdepth 1 \( -name '*.py' -o -name '*.txt' -o -name 'Containerfile' -o -name '*.yml' -o -name '.env' \) \
+        -exec stat -c %Y {} + 2>/dev/null | sort -n | tail -1 || echo 0
+}
 
 if [ ! -f .env ]; then
     error "Brak pliku .env — skopiuj .env.example do .env i uzupełnij (patrz README_BOT_INTEGRATION.md)."
     exit 1
 fi
 
-case "${1:-up}" in
-    up|deploy)
-        log "Building + starting (project: $COMPOSE_PROJECT_NAME)..."
-        $COMPOSE build
-        $COMPOSE up -d
-        log "Running. Container: $CONTAINER. Follow logs: ./deploy.sh logs"
-        ;;
-    rebuild)
-        log "Rebuilding image (no cache) + recreating..."
-        $COMPOSE build --no-cache
-        $COMPOSE up -d --force-recreate
-        log "Rebuilt and running."
-        ;;
-    restart)
-        log "Recreating container (no rebuild)..."
-        $COMPOSE up -d --force-recreate
-        log "Restarted."
-        ;;
-    down|stop)
-        log "Stopping + removing this project's container only..."
-        $COMPOSE down
-        log "Stopped."
-        ;;
-    logs)
-        podman logs -f --tail=100 "$CONTAINER"
-        ;;
-    logs-crawler)
-        podman logs -f --tail=100 alertkonsumencki_crawler
-        ;;
-    status)
-        podman ps --filter "name=^alertkonsumencki_" --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
-        ;;
-    *)
-        echo "usage: $0 {up|rebuild|restart|down|logs|logs-crawler|status}"
-        exit 1
-        ;;
-esac
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    error "Ten katalog nie jest repozytorium git. Nie można włączyć watch/redeploy."
+    exit 1
+fi
+
+REMOTE_URL=$(git remote get-url origin 2>/dev/null || true)
+if [[ "$REMOTE_URL" == https://github.com/* ]]; then
+    SSH_URL="git@github.com:${REMOTE_URL#https://github.com/}"
+    git remote set-url origin "$SSH_URL" 2>/dev/null || true
+    info "Switched remote to SSH: $SSH_URL"
+fi
+
+deploy() {
+    stop_logs
+    log "Building images and starting containers..."
+    if ! $COMPOSE build; then
+        error "Build failed."
+        start_logs
+        return 1
+    fi
+    if ! $COMPOSE up -d --force-recreate; then
+        error "Deploy failed."
+        start_logs
+        return 1
+    fi
+    log "Deployed. Streaming logs..."
+    start_logs
+}
+
+restart_only() {
+    stop_logs
+    log "Restarting container (no build)..."
+    if ! $COMPOSE up -d --force-recreate; then
+        error "Restart failed."
+        start_logs
+        return 1
+    fi
+    log "Restart complete. Streaming logs..."
+    start_logs
+}
+
+if [ "${1:-up}" = "restart" ]; then
+    restart_only
+    exit $?
+fi
+
+if [ "${1:-up}" = "rebuild" ]; then
+    stop_logs
+    log "Rebuilding image (no cache) + recreating..."
+    $COMPOSE build --no-cache
+    $COMPOSE up -d --force-recreate
+    log "Rebuilt and running."
+    start_logs
+    exit 0
+fi
+
+if [ "${1:-up}" = "down" ] || [ "${1:-up}" = "stop" ]; then
+    stop_logs
+    log "Stopping + removing this project's containers..."
+    $COMPOSE down
+    log "Stopped."
+    exit 0
+fi
+
+if [ "${1:-up}" = "logs" ]; then
+    follow_logs
+    exit 0
+fi
+
+if [ "${1:-up}" = "logs-crawler" ]; then
+    podman logs -f --tail=100 alertkonsumencki_crawler
+    exit 0
+fi
+
+if [ "${1:-up}" = "status" ]; then
+    podman ps --filter "name=^alertkonsumencki_" --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
+    exit 0
+fi
+
+if [ "${1:-up}" != "up" ] && [ "${1:-up}" != "deploy" ]; then
+    echo "usage: $0 {up|deploy|rebuild|restart|down|logs|logs-crawler|status}"
+    exit 1
+fi
+
+deploy
+
+LAST_MTIME=$(get_mtime)
+LAST_GIT_REV=$(git rev-parse HEAD 2>/dev/null || true)
+
+log "Watching local files and origin/main for changes..."
+while true; do
+    sleep "$POLL_INTERVAL"
+
+    CURRENT_MTIME=$(get_mtime)
+    if [ "$CURRENT_MTIME" != "$LAST_MTIME" ]; then
+        log "Local files changed. Redeploying..."
+        LAST_MTIME="$CURRENT_MTIME"
+        deploy
+        LAST_GIT_REV=$(git rev-parse HEAD 2>/dev/null || true)
+        continue
+    fi
+
+    if git fetch origin main >/dev/null 2>&1; then
+        REMOTE_REV=$(git rev-parse origin/main 2>/dev/null || true)
+        if [ -n "$REMOTE_REV" ] && [ "$LAST_GIT_REV" != "$REMOTE_REV" ]; then
+            if git merge-base --is-ancestor origin/main HEAD >/dev/null 2>&1; then
+                log "New origin/main commit detected. Resetting to origin/main and redeploying..."
+                git reset --hard origin/main
+                LAST_GIT_REV="$REMOTE_REV"
+                LAST_MTIME=$(get_mtime)
+                deploy
+            else
+                log "Origin/main advanced, but local HEAD is ahead. Skipping reset until local changes are pushed."
+                LAST_GIT_REV=$(git rev-parse HEAD 2>/dev/null || true)
+            fi
+        fi
+    fi
+done
