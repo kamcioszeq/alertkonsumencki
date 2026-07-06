@@ -10,6 +10,7 @@ from telethon import Button
 import config as root_config
 from . import config
 from .buttons import make_generate_button
+from core.state import pending_posts
 
 
 def _alert_image():
@@ -78,3 +79,21 @@ async def restore_buttons(bot, msg_id):
             await msg.edit(buttons=make_generate_button())
     except Exception:
         pass
+
+
+async def restore_phase1_menu(bot, post: dict):
+    """Przywróć główne przyciski (Generuj post / FB / …) na wiadomości źródłowej."""
+    anchor = post.get("phase1_msg_id") if post else None
+    if anchor:
+        await restore_buttons(bot, anchor)
+
+
+async def handle_phase1_menu(bot, event, msg_id: int) -> bool:
+    """Callback ↩️ Główne menu — przywraca przyciski Generuj na wiadomości źródłowej."""
+    post = pending_posts.get(msg_id)
+    if not post or not post.get("phase1_msg_id"):
+        await event.answer("Brak wiadomości źródłowej", alert=True)
+        return False
+    await restore_phase1_menu(bot, post)
+    await event.answer("↩️ Główne menu przywrócone u góry")
+    return True

@@ -50,6 +50,11 @@ def make_url_adjust_buttons():
     ]
 
 
+def make_tg_published_buttons():
+    """Po publikacji na TG — wróć do głównego menu (inne platformy)."""
+    return [[Button.inline("↩️ Główne menu", b"phase1_menu")]]
+
+
 def make_shorten_buttons():
     """Shorten submenu — reduce the draft by a chosen percentage."""
     return [

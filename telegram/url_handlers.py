@@ -10,7 +10,7 @@ from .prompts import (
 )
 from .format import fit_telegram_text
 from .buttons import make_url_confirm_buttons, make_url_adjust_buttons, make_url_publish_buttons
-from .publish import send_preview, show_loading, restore_buttons
+from .publish import send_preview, show_loading, restore_buttons, handle_phase1_menu
 from core.claude import ask_claude
 from core.article import fetch_article
 from core.state import pending_adoption, pending_posts, track_post, save_state
@@ -24,6 +24,10 @@ def register_url_handlers(bot):
 
         msg_id = event.message_id
         data = event.data.decode()
+
+        if data == "phase1_menu":
+            await handle_phase1_menu(bot, event, msg_id)
+            return
 
         # ── Reject a Phase-1 item ──
         if data == "reject":

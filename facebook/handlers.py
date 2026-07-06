@@ -9,13 +9,13 @@ from core.banners import apply_banner_from_llm
 from core.claude import ask_claude
 from core.state import pending_posts, track_post, save_state
 from telegram.config import INTERNAL_CHAT_ID, REVIEWER_IDS
-from telegram.publish import show_loading, send_preview
+from telegram.publish import show_loading, send_preview, restore_phase1_menu, restore_buttons, handle_phase1_menu
 from telegram.buttons import (
     make_url_confirm_buttons, make_url_publish_buttons, make_url_adjust_buttons,
 )
 from telegram.prompts import SYSTEM_PROMPT, _build_draft_instruction
 from telegram.format import fit_telegram_text
-from .buttons import make_fb_adjust_buttons, make_fb_shorten_buttons, make_fb_promo_button
+from .buttons import make_fb_adjust_buttons, make_fb_shorten_buttons, make_fb_published_buttons
 from .prompts import (
     FB_SYSTEM_PROMPT, FB_COMMENT_SYSTEM_PROMPT,
     FB_GENERATE_INSTRUCTION, FB_GENERATE_FROM_SOURCE, FB_COMMENT_GENERATE_INSTRUCTION,
@@ -132,6 +132,10 @@ def register_facebook_handlers(bot):
         msg_id = event.message_id
         data = event.data.decode()
 
+        if data == "phase1_menu":
+            await handle_phase1_menu(bot, event, msg_id)
+            return
+
         # ── Start FB path from a Telegram draft ──
         if data == "fb_start":
             tg_post = pending_posts.get(msg_id)
@@ -191,7 +195,7 @@ def register_facebook_handlers(bot):
             print(f"[PROMO_FB] Błąd: {result}")
             await event.answer(f"FB PROMO: {result}", alert=True)
             try:
-                await original_msg.edit(buttons=make_fb_promo_button())
+                await original_msg.edit(buttons=make_fb_published_buttons())
             except Exception:
                 pass
             return
@@ -272,10 +276,11 @@ def register_facebook_handlers(bot):
                         status += f"\n⚠️ Komentarz nie dodany: {c_result}"
                 await original_msg.edit(
                     original_msg.text + status,
-                    buttons=make_fb_promo_button(),
+                    buttons=make_fb_published_buttons(),
                 )
                 post["platform"] = "fb_published"
                 post["fb_post_id"] = result  # potrzebne do PROMO w komentarzu
+                await restore_phase1_menu(bot, post)
                 save_state()
                 return
 

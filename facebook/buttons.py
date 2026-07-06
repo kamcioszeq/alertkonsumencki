@@ -23,9 +23,12 @@ def make_fb_adjust_buttons():
     ]
 
 
-def make_fb_promo_button():
-    """Po opublikowaniu alertu — opublikuj post PROMO zapraszający do społeczności."""
-    return [[Button.inline("📣 PROMO", b"fb_promo")]]
+def make_fb_published_buttons():
+    """Po publikacji na FB — PROMO + powrót do głównego menu."""
+    return [
+        [Button.inline("📣 PROMO", b"fb_promo")],
+        [Button.inline("↩️ Główne menu", b"phase1_menu")],
+    ]
 
 
 def make_fb_shorten_buttons():

@@ -8,9 +8,9 @@ from .prompts import (
     SYSTEM_PROMPT, ALERT_VARIANT_SYSTEM, REPHRASE_INSTRUCTIONS, REPHRASE_LABELS,
     SHORTEN_INSTRUCTIONS, SHORTEN_LABELS, STYLE_NAMES,
 )
-from .buttons import make_url_adjust_buttons, make_shorten_buttons
+from .buttons import make_url_adjust_buttons, make_shorten_buttons, make_tg_published_buttons
 from .format import fit_telegram_text
-from .publish import send_preview, publish_to_channel, show_loading
+from .publish import send_preview, publish_to_channel, show_loading, restore_phase1_menu, handle_phase1_menu
 from core.claude import ask_claude
 from core.state import pending_posts, track_post, save_state
 
@@ -36,6 +36,11 @@ def register_handlers(bot):
         data = event.data.decode()
 
         post = pending_posts.get(msg_id)
+
+        if data == "phase1_menu":
+            await handle_phase1_menu(bot, event, msg_id)
+            return
+
         if not post or post.get("platform") != "url_article":
             return
 
@@ -57,8 +62,12 @@ def register_handlers(bot):
                     pass
                 return
             original_msg = await event.get_message()
-            await original_msg.edit(original_msg.text + "\n\n✅ OPUBLIKOWANO", buttons=None)
+            await original_msg.edit(
+                original_msg.text + "\n\n✅ OPUBLIKOWANO",
+                buttons=make_tg_published_buttons(),
+            )
             post["platform"] = "published"
+            await restore_phase1_menu(bot, post)
             save_state()
             return
 
