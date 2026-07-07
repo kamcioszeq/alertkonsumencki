@@ -27,10 +27,30 @@ COMPOSE="podman-compose"
 POLL_INTERVAL=5
 export CRAWLER_INTERVAL="${CRAWLER_INTERVAL:-600}"
 
+# Dropped by the bot's /redeploy and /restart Telegram commands (bot runs in a
+# container with no podman access, so it can't call this script directly).
+REDEPLOY_TRIGGER_FILE="session/.redeploy_trigger"
+
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
 log()   { echo -e "${GREEN}[$(date +'%Y-%m-%d %H:%M:%S')]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1" >&2; }
 info()  { echo -e "${YELLOW}[INFO]${NC} $1"; }
+
+notify_telegram() {
+    local text="$1"
+    local bot_token chat_id
+    bot_token=$(grep -E '^BOT_TOKEN=' .env | head -1 | cut -d= -f2-)
+    chat_id=$(grep -E '^INTERNAL_CHAT_ID=' .env | head -1 | cut -d= -f2-)
+    if [ -z "$chat_id" ]; then
+        chat_id=$(grep -E '^REVIEWER_IDS=' .env | head -1 | cut -d= -f2- | cut -d, -f1 | tr -d ' ')
+    fi
+    if [ -z "$bot_token" ] || [ -z "$chat_id" ]; then
+        info "Telegram notification skipped (brak BOT_TOKEN/chat id w .env)."
+        return 0
+    fi
+    curl -s -X POST "https://api.telegram.org/bot${bot_token}/sendMessage" \
+        -d chat_id="${chat_id}" -d text="${text}" >/dev/null 2>&1 || true
+}
 
 LOG_PIDS=()
 start_logs() {
@@ -108,6 +128,15 @@ deploy() {
     start_logs
 }
 
+rebuild() {
+    stop_logs
+    log "Rebuilding image (no cache) + recreating..."
+    $COMPOSE build --no-cache
+    $COMPOSE up -d --force-recreate
+    log "Rebuilt and running."
+    start_logs
+}
+
 restart_only() {
     stop_logs
     log "Restarting container (no build)..."
@@ -126,12 +155,7 @@ if [ "${1:-up}" = "restart" ]; then
 fi
 
 if [ "${1:-up}" = "rebuild" ]; then
-    stop_logs
-    log "Rebuilding image (no cache) + recreating..."
-    $COMPOSE build --no-cache
-    $COMPOSE up -d --force-recreate
-    log "Rebuilt and running."
-    start_logs
+    rebuild
     exit 0
 fi
 
@@ -172,6 +196,23 @@ log "Watching local files and origin/main for changes..."
 while true; do
     sleep "$POLL_INTERVAL"
 
+    if [ -f "$REDEPLOY_TRIGGER_FILE" ]; then
+        TRIGGER_MODE=$(tr -d '[:space:]' < "$REDEPLOY_TRIGGER_FILE")
+        rm -f "$REDEPLOY_TRIGGER_FILE"
+        notify_telegram "🔄 System initiated redeployment"
+        if [ "$TRIGGER_MODE" = "rebuild" ]; then
+            log "Manual /restart trigger detected. Rebuilding (no cache)..."
+            rebuild
+        else
+            log "Manual /redeploy trigger detected. Redeploying..."
+            deploy
+        fi
+        notify_telegram "✅ System redeployment done"
+        LAST_MTIME=$(get_mtime)
+        LAST_GIT_REV=$(git rev-parse HEAD 2>/dev/null || true)
+        continue
+    fi
+
     CURRENT_MTIME=$(get_mtime)
     if [ "$CURRENT_MTIME" != "$LAST_MTIME" ]; then
         log "Local files changed. Redeploying..."
@@ -186,10 +227,12 @@ while true; do
         if [ -n "$REMOTE_REV" ] && [ "$LAST_GIT_REV" != "$REMOTE_REV" ]; then
             if git merge-base --is-ancestor origin/main HEAD >/dev/null 2>&1; then
                 log "New origin/main commit detected. Resetting to origin/main and redeploying..."
+                notify_telegram "🔄 System initiated redeployment"
                 git reset --hard origin/main
                 LAST_GIT_REV="$REMOTE_REV"
                 LAST_MTIME=$(get_mtime)
                 deploy
+                notify_telegram "✅ System redeployment done"
             else
                 log "Origin/main advanced, but local HEAD is ahead. Skipping reset until local changes are pushed."
                 LAST_GIT_REV=$(git rev-parse HEAD 2>/dev/null || true)
