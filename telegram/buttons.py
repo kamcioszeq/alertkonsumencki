@@ -55,6 +55,23 @@ def make_tg_published_buttons():
     return [[Button.inline("↩️ Główne menu", b"phase1_menu")]]
 
 
+def make_stats_period_buttons():
+    """/stats — wybór okresu."""
+    return [[Button.inline("📅 Miesiąc", b"stats_period:month"),
+             Button.inline("📆 Rok", b"stats_period:year")]]
+
+
+def make_stats_type_buttons(period: str):
+    """Po wyborze okresu — rodzaj statystyki do wygenerowania."""
+    return [
+        [Button.inline("📊 Podsumowanie ogólne", f"stats_type:summary:{period}".encode())],
+        [Button.inline("⚠️ Top zagrożenia", f"stats_type:categories:{period}".encode())],
+        [Button.inline("🏷 Najczęstsze marki", f"stats_type:brands:{period}".encode())],
+        [Button.inline("🔥 Najgłośniejsze przypadki", f"stats_type:notable:{period}".encode())],
+        [Button.inline("← Wróć", b"stats_back")],
+    ]
+
+
 def make_shorten_buttons():
     """Shorten submenu — reduce the draft by a chosen percentage."""
     return [

@@ -14,6 +14,7 @@ from .format import fit_telegram_text
 from .publish import send_preview, publish_to_channel, show_loading, restore_phase1_menu, handle_phase1_menu, notify_reviewers
 from core.claude import ask_claude
 from core.state import pending_posts, track_post, save_state
+from stats.prompts import STATS_SYSTEM_PROMPT
 
 # Rephrase + percentage-shorten share the same regenerate flow.
 ADJUST_INSTRUCTIONS = {**REPHRASE_INSTRUCTIONS, **SHORTEN_INSTRUCTIONS}
@@ -22,9 +23,14 @@ ADJUST_LABELS = {**REPHRASE_LABELS, **SHORTEN_LABELS}
 
 def _system_for(post):
     """Edycje wariantów Krótki/Długi alert zachowują ich styl i hook (ALERT_VARIANT_SYSTEM);
-    domyślny post (url_draft) zostaje przy SYSTEM_PROMPT."""
+    posty statystyczne (/stats) zostają przy STATS_SYSTEM_PROMPT; domyślny post (url_draft)
+    zostaje przy SYSTEM_PROMPT."""
     variant = (post.get("edit_chain") or ["url_draft"])[0]
-    return ALERT_VARIANT_SYSTEM if variant in ("short_alert", "long_alert") else SYSTEM_PROMPT
+    if variant in ("short_alert", "long_alert"):
+        return ALERT_VARIANT_SYSTEM
+    if variant.startswith("stats_"):
+        return STATS_SYSTEM_PROMPT
+    return SYSTEM_PROMPT
 
 
 def register_handlers(bot):

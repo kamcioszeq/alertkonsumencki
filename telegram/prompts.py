@@ -273,4 +273,8 @@ STYLE_NAMES = {
     "short_30": "skrócony o 30%",
     "short_50": "skrócony o 50%",
     "short_70": "skrócony o 70%",
+    "stats_summary": "podsumowanie statystyczne",
+    "stats_categories": "statystyki wg zagrożeń",
+    "stats_brands": "statystyki wg marek",
+    "stats_notable": "najgłośniejsze przypadki",
 }
