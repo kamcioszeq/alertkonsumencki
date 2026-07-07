@@ -66,7 +66,11 @@ cleanup() {
 trap cleanup INT TERM
 
 get_mtime() {
-    find "$REPO_DIR" -maxdepth 1 \( -name '*.py' -o -name '*.txt' -o -name 'Containerfile' -o -name '*.yml' -o -name '.env' \) \
+    find "$REPO_DIR" \( -name '*.py' -o -name '*.txt' -o -name 'Containerfile' -o -name '*.yml' -o -name '.env' \) \
+        -not -path '*/__pycache__/*' \
+        -not -path '*/queue/*' \
+        -not -path '*/session/*' \
+        -not -path '*/gis_alerts/*' \
         -exec stat -c %Y {} + 2>/dev/null | sort -n | tail -1 || echo 0
 }
 
