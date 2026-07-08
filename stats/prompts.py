@@ -1,5 +1,30 @@
 """Prompty do generowania marketingowych podsumowań statystycznych (Facebook/Telegram)."""
+import re
 from datetime import date
+
+_TITLE_PREFIX_RE = re.compile(r'^(Aktualizacja\s+ostrzeżenia\s+publicznego|Ostrzeżenie\s+publiczne)\b', re.I)
+
+
+def strip_title_prefix(title: str) -> str:
+    """Usuwa standardowy prefiks GIS ('Ostrzeżenie publiczne dotyczące żywności: ' itp.),
+    zostawiając samą treść tytułu. Tytuły bez tego prefiksu zwraca bez zmian."""
+    if not _TITLE_PREFIX_RE.match(title):
+        return title
+    if ":" in title:
+        _, rest = title.split(":", 1)
+        rest = rest.strip()
+        if rest:
+            return rest[0].upper() + rest[1:]
+    m = re.search(r"(?:żywności|kosmetyków)\s*", title, re.I)
+    if m:
+        rest = title[m.end():].strip()
+        if rest:
+            return rest[0].upper() + rest[1:]
+    return title
+
+# Podsumowania statystyczne wymagają lepszej syntezy/pisania niż zwykłe przeredagowanie
+# alertu, więc idą przez mocniejszy model niż domyślny config.CLAUDE_MODEL (Haiku).
+STATS_MODEL = "claude-opus-4-8"
 
 STATS_SYSTEM_PROMPT = (
     "Jesteś redaktorem social-media dla \"Alert Konsumencki\" — kanału ostrzegającego przed "
@@ -83,6 +108,7 @@ STATS_TYPE_LABELS = {
     "categories": "⚠️ Top zagrożenia",
     "brands": "🏷 Najczęstsze marki",
     "notable": "🔥 Najgłośniejsze przypadki",
+    "titles": "📋 Lista tytułów",
 }
 
 _BUILDERS = {
@@ -97,3 +123,64 @@ def instruction_for(stat_type: str, label: str, count: int) -> str:
     if stat_type == "summary":
         return _instruction_summary(label, count)
     return _BUILDERS[stat_type](label)
+
+
+# ─── Udostępnianie: TG zachowuje stopkę "Alert konsumencki | @alertkonsumencki"
+# (dodaje ją STATS_SYSTEM_PROMPT); FB nie ma tego formatu, więc na Facebooka idzie
+# bez niej — usuwana programowo, bez dodatkowego wywołania modelu.
+_FOOTER_RE = re.compile(r"\n*<b>Alert konsumencki</b>\s*\|\s*@alertkonsumencki\s*$", re.I)
+
+
+def strip_footer(text: str) -> str:
+    return _FOOTER_RE.sub("", text).strip()
+
+
+_ONLY_POST = " Zwróć wyłącznie gotowy post — bez komentarza i bez opisu, co robisz."
+
+STATS_ADJUST_LABELS = {
+    "formal": "Bardziej formalny",
+    "informal": "Mniej formalny",
+    "plain": "Plain (bez ikon)",
+    "angel": "😇 Anioł (bez firm)",
+}
+
+STATS_ADJUST_INSTRUCTIONS = {
+    "formal": (
+        "Przeredaguj powyższe podsumowanie statystyczne bardziej formalnie i oficjalnie — "
+        "ton rzeczowy, bez poufałości i bez clickbaitu. Zachowaj wszystkie liczby/fakty "
+        "i stopkę." + _ONLY_POST
+    ),
+    "informal": (
+        "Przeredaguj powyższe podsumowanie mniej formalnie — luźniej, bardziej przystępnie, "
+        "jakbyś pisał do znajomych. Zachowaj wszystkie liczby/fakty i stopkę." + _ONLY_POST
+    ),
+    "plain": (
+        "Przeredaguj powyższe podsumowanie na wersję PLAIN: usuń WSZYSTKIE emoji/ikony "
+        "(także z ewentualnej stopki) i wszelkie marketingowe zabiegi (hooki, clickbait, "
+        "wykrzykniki) — zostaw suchą, rzeczową listę faktów/liczb w prostej formie. "
+        "Zachowaj wszystkie liczby i fakty oraz stopkę (samą treść stopki, bez emoji)."
+        + _ONLY_POST
+    ),
+    "angel": (
+        "Przeredaguj powyższe podsumowanie tak, aby NIE wskazywać żadnych konkretnych nazw "
+        "firm/marek/producentów — zastąp je ogólnymi określeniami (np. 'jeden z producentów', "
+        "'popularna marka z tej kategorii'). Zachowaj wszystkie liczby i fakty dotyczące "
+        "samych zagrożeń — usuń wyłącznie identyfikację konkretnych podmiotów. Zachowaj "
+        "stopkę." + _ONLY_POST
+    ),
+}
+
+STATS_SHORTEN_LABELS = {
+    "stats_short_20": "SKRÓĆ 20%",
+    "stats_short_30": "SKRÓĆ 30%",
+    "stats_short_50": "SKRÓĆ 50%",
+    "stats_short_70": "SKRÓĆ 70%",
+}
+
+STATS_SHORTEN_INSTRUCTIONS = {
+    key: (
+        f"Skróć powyższe podsumowanie o około {pct}% (usuń mniej więcej {pct}% objętości "
+        "tekstu). Zostaw najważniejsze liczby i fakty. Zachowaj stopkę." + _ONLY_POST
+    )
+    for key, pct in (("stats_short_20", 20), ("stats_short_30", 30), ("stats_short_50", 50), ("stats_short_70", 70))
+}

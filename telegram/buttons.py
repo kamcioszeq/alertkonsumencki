@@ -68,7 +68,35 @@ def make_stats_type_buttons(period: str):
         [Button.inline("⚠️ Top zagrożenia", f"stats_type:categories:{period}".encode())],
         [Button.inline("🏷 Najczęstsze marki", f"stats_type:brands:{period}".encode())],
         [Button.inline("🔥 Najgłośniejsze przypadki", f"stats_type:notable:{period}".encode())],
+        [Button.inline("📋 Lista tytułów", f"stats_type:titles:{period}".encode())],
         [Button.inline("← Wróć", b"stats_back")],
+    ]
+
+
+def make_stats_adjust_buttons():
+    """Wygenerowany post statystyczny — udostępnij (TG ze stopką / FB bez stopki) albo
+    zmień styl przed udostępnieniem."""
+    return [
+        [Button.inline("📤 Share → TG", b"stats_share:tg"), Button.inline("📘 Share → FB", b"stats_share:fb")],
+        [Button.inline("Bardziej formalny", b"stats_adjust:formal"),
+         Button.inline("Mniej formalny", b"stats_adjust:informal")],
+        [Button.inline("Plain (bez ikon)", b"stats_adjust:plain"),
+         Button.inline("😇 Anioł (bez firm)", b"stats_adjust:angel")],
+        [Button.inline("Skróć", b"stats_shorten_menu"), Button.inline("✏️ Edytuj", b"stats_edit")],
+        [Button.inline("Odrzuć", b"stats_reject")],
+    ]
+
+
+def make_stats_shorten_buttons():
+    """Stats — shorten submenu."""
+    return [
+        [
+            Button.inline("20%", b"stats_short_20"),
+            Button.inline("30%", b"stats_short_30"),
+            Button.inline("50%", b"stats_short_50"),
+            Button.inline("70%", b"stats_short_70"),
+        ],
+        [Button.inline("← Wróć", b"stats_shorten_back")],
     ]
 
 

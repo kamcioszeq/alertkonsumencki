@@ -3,11 +3,13 @@ import httpx
 import config
 
 
-async def ask_claude(text: str, source: str, instruction: str, *, system_prompt: str = None) -> str:
+async def ask_claude(text: str, source: str, instruction: str, *, system_prompt: str = None,
+                      model: str = None) -> str:
     """Ask Claude to transform `text` per `instruction`. Returns the generated text.
 
     `system_prompt` is supplied by the calling platform (e.g. the Telegram consumer-alert
-    prompt). If None, no system prompt is sent.
+    prompt). If None, no system prompt is sent. `model` overrides config.CLAUDE_MODEL for
+    calls that need a stronger model (e.g. marketing stats summaries).
     """
     prompt = (
         f"Źródło: {source}\n\n"
@@ -16,7 +18,7 @@ async def ask_claude(text: str, source: str, instruction: str, *, system_prompt:
     )
 
     body = {
-        "model": config.CLAUDE_MODEL,
+        "model": model or config.CLAUDE_MODEL,
         "max_tokens": 1024,
         "messages": [{"role": "user", "content": prompt}],
     }
