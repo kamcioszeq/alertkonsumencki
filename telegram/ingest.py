@@ -113,3 +113,15 @@ def register_ingest(bot):
         if getattr(event, "chat_id", None) != config.INTERNAL_CHAT_ID:
             return
         await ingest_alert(bot, SAMPLE_ALERT, source="/test")
+
+    @bot.on(events.NewMessage(pattern=r"^/redeploy_test$"))
+    async def on_redeploy_test(event):
+        """Mini-komenda do potwierdzenia redeployu (bez efektów ubocznych)."""
+        if event.sender_id not in config.REVIEWER_IDS:
+            return
+        if getattr(event, "chat_id", None) != config.INTERNAL_CHAT_ID:
+            return
+        # ISO-8601 ułatwia rozróżnienie wersji po redeploy.
+        import datetime
+        now = datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+        await event.reply(f"REDEPLOY_TEST_OK {now}")
