@@ -27,9 +27,11 @@ COMPOSE="podman-compose"
 POLL_INTERVAL=5
 export CRAWLER_INTERVAL="${CRAWLER_INTERVAL:-600}"
 
-# Dropped by the bot's /redeploy and /restart Telegram commands (bot runs in a
+# Dropped by the bot's /redeploy, /restart i /rebuild Telegram commands (bot runs in a
 # container with no podman access, so it can't call this script directly).
 REDEPLOY_TRIGGER_FILE="session/.redeploy_trigger"
+# Ostatni deploy — czyta go komenda /check w Telegramie.
+DEPLOY_STATUS_FILE="session/deploy_status.json"
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
 log()   { echo -e "${GREEN}[$(date +'%Y-%m-%d %H:%M:%S')]${NC} $1"; }
@@ -50,6 +52,13 @@ notify_telegram() {
     fi
     curl -s -X POST "https://api.telegram.org/bot${bot_token}/sendMessage" \
         -d chat_id="${chat_id}" -d text="${text}" >/dev/null 2>&1 || true
+}
+
+record_status() {
+    local mode="$1" trigger="$2" status="$3"
+    mkdir -p session
+    printf '{"timestamp": "%s", "mode": "%s", "trigger": "%s", "status": "%s"}\n' \
+        "$(date -Iseconds)" "$mode" "$trigger" "$status" > "$DEPLOY_STATUS_FILE"
 }
 
 LOG_PIDS=()
@@ -142,50 +151,69 @@ sync_from_main() {
 }
 
 deploy() {
+    local trigger="${1:-manual}"
     stop_logs
     log "Building images and starting containers..."
     if ! $COMPOSE build; then
         error "Build failed."
+        record_status "deploy" "$trigger" "failed"
         start_logs
         return 1
     fi
     if ! $COMPOSE up -d --force-recreate; then
         error "Deploy failed."
+        record_status "deploy" "$trigger" "failed"
         start_logs
         return 1
     fi
     log "Deployed. Streaming logs..."
+    record_status "deploy" "$trigger" "success"
     start_logs
 }
 
 rebuild() {
+    local trigger="${1:-manual}"
     stop_logs
     log "Rebuilding image (no cache) + recreating..."
-    $COMPOSE build --no-cache
-    $COMPOSE up -d --force-recreate
+    if ! $COMPOSE build --no-cache; then
+        error "Rebuild failed."
+        record_status "rebuild" "$trigger" "failed"
+        start_logs
+        return 1
+    fi
+    if ! $COMPOSE up -d --force-recreate; then
+        error "Rebuild (recreate) failed."
+        record_status "rebuild" "$trigger" "failed"
+        start_logs
+        return 1
+    fi
     log "Rebuilt and running."
+    record_status "rebuild" "$trigger" "success"
     start_logs
 }
 
 restart_only() {
+    local trigger="${1:-manual}"
     stop_logs
     log "Restarting container (no build)..."
     if ! $COMPOSE up -d --force-recreate; then
         error "Restart failed."
+        record_status "restart" "$trigger" "failed"
         start_logs
         return 1
     fi
     log "Restart complete. Streaming logs..."
+    record_status "restart" "$trigger" "success"
     start_logs
 }
 
 if [ "${1:-up}" = "restart" ]; then
-    restart_only
+    restart_only "cli"
     exit $?
 fi
 
 if [ "${1:-up}" = "rebuild" ]; then
-    rebuild
+    rebuild "cli"
     exit 0
 fi
 
@@ -217,7 +245,7 @@ if [ "${1:-up}" != "up" ] && [ "${1:-up}" != "deploy" ]; then
     exit 1
 fi
 
-deploy
+deploy "cli"
 
 LAST_MTIME=$(get_mtime)
 LAST_GIT_REV=$(git rev-parse HEAD 2>/dev/null || true)
@@ -231,13 +259,13 @@ while true; do
         rm -f "$REDEPLOY_TRIGGER_FILE"
         notify_telegram "🔄 System initiated redeployment"
         if [ "$TRIGGER_MODE" = "rebuild" ]; then
-            log "Manual /restart trigger detected. git pull + rebuild..."
+            log "Manual /restart lub /rebuild trigger detected. git pull + rebuild..."
             sync_from_main || info "Git sync failed — rebuild z obecnego drzewa."
-            rebuild
+            rebuild "manual_rebuild"
         else
             log "Manual /redeploy trigger detected. git pull + redeploy..."
             sync_from_main || info "Git sync failed — deploy z obecnego drzewa."
-            deploy
+            deploy "manual_redeploy"
         fi
         notify_telegram "✅ System redeployment done"
         LAST_MTIME=$(get_mtime)
@@ -248,8 +276,10 @@ while true; do
     CURRENT_MTIME=$(get_mtime)
     if [ "$CURRENT_MTIME" != "$LAST_MTIME" ]; then
         log "Local files changed. Redeploying..."
+        notify_telegram "🔄 System initiated redeployment (lokalne zmiany plików)"
         LAST_MTIME="$CURRENT_MTIME"
-        deploy
+        deploy "local_files"
+        notify_telegram "✅ System redeployment done"
         LAST_GIT_REV=$(git rev-parse HEAD 2>/dev/null || true)
         continue
     fi
@@ -259,11 +289,11 @@ while true; do
         if [ -n "$REMOTE_REV" ] && [ "$LAST_GIT_REV" != "$REMOTE_REV" ]; then
             if git merge-base --is-ancestor origin/main HEAD >/dev/null 2>&1; then
                 log "New origin/main commit detected. Resetting to origin/main and redeploying..."
-                notify_telegram "🔄 System initiated redeployment"
+                notify_telegram "🔄 System initiated redeployment (nowy commit na main)"
                 git reset --hard origin/main
                 LAST_GIT_REV="$REMOTE_REV"
                 LAST_MTIME=$(get_mtime)
-                deploy
+                deploy "origin_main"
                 notify_telegram "✅ System redeployment done"
             else
                 log "Origin/main advanced, but local HEAD is ahead. Skipping reset until local changes are pushed."

@@ -76,14 +76,16 @@ def register_ingest(bot):
     @bot.on(events.NewMessage(func=lambda e: (
         getattr(e, "chat_id", None) == config.INTERNAL_CHAT_ID
         and not e.forward and not e.is_reply and e.text
-        and not e.text.startswith("/") and has_url(e.text)
+        and not e.text.startswith("/")
     )))
-    async def on_direct_url(event):
+    async def on_direct_item(event):
+        """Dowolny tekst wrzucony wprost do czatu (link ALBO zwykła treść alertu) —
+        ten sam Phase-1 flow co /new, bez konieczności wpisywania komendy."""
         if event.sender_id not in config.REVIEWER_IDS:
             return
         text = event.text.strip()
         post = {
-            "original_text": text, "source": "link", "has_url": False,
+            "original_text": text, "source": "link" if has_url(text) else "text", "has_url": False,
             "article_url": "", "user_instruction": "", "image": root_config.ALERT_IMAGE,
         }
         apply_url_fields(post, text)
@@ -92,7 +94,8 @@ def register_ingest(bot):
             buttons=make_generate_button(), reply_to=event.id,
         )
         pending_adoption[sent.id] = track_post(pending_adoption, post, sent_id=sent.id)
-        print(f"[DIRECT_URL] {post.get('article_url', '?')}")
+        label = post.get("article_url") if post.get("has_url") else text[:60]
+        print(f"[DIRECT_{'URL' if post.get('has_url') else 'TEXT'}] {label}")
 
     @bot.on(events.NewMessage(pattern=r"^/new(?:\s+([\s\S]+))?$"))
     async def on_new(event):
