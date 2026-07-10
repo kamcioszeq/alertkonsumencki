@@ -111,6 +111,36 @@ if [[ "$REMOTE_URL" == https://github.com/* ]]; then
     info "Switched remote to SSH: $SSH_URL"
 fi
 
+# Pull latest origin/main before manual /restart (Telegram trigger).
+sync_from_main() {
+    log "Syncing repo with origin/main..."
+    if ! git fetch origin main 2>&1; then
+        error "git fetch origin main failed."
+        notify_telegram "⚠️ git fetch origin/main failed — rebuild z lokalnego kodu"
+        return 1
+    fi
+    if ! git rev-parse origin/main >/dev/null 2>&1; then
+        error "Brak gałęzi origin/main."
+        notify_telegram "⚠️ Brak origin/main — rebuild z lokalnego kodu"
+        return 1
+    fi
+    REMOTE_REV=$(git rev-parse origin/main)
+    LOCAL_REV=$(git rev-parse HEAD)
+    if [ "$REMOTE_REV" = "$LOCAL_REV" ]; then
+        info "Już na origin/main ($(git log -1 --oneline))."
+        return 0
+    fi
+    log "Reset do origin/main ($(git log -1 --oneline origin/main))..."
+    if ! git reset --hard origin/main; then
+        error "git reset --hard origin/main failed."
+        notify_telegram "⚠️ git reset origin/main failed — rebuild z lokalnego kodu"
+        return 1
+    fi
+    log "Git sync OK: $(git log -1 --oneline)"
+    notify_telegram "📥 Git: $(git log -1 --format='%h %s')"
+    return 0
+}
+
 deploy() {
     stop_logs
     log "Building images and starting containers..."
@@ -201,7 +231,8 @@ while true; do
         rm -f "$REDEPLOY_TRIGGER_FILE"
         notify_telegram "🔄 System initiated redeployment"
         if [ "$TRIGGER_MODE" = "rebuild" ]; then
-            log "Manual /restart trigger detected. Rebuilding (no cache)..."
+            log "Manual /restart trigger detected. git pull + rebuild..."
+            sync_from_main || info "Git sync failed — rebuild z obecnego drzewa."
             rebuild
         else
             log "Manual /redeploy trigger detected. Redeploying..."

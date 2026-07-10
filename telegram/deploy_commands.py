@@ -34,4 +34,7 @@ def register_deploy_commands(bot):
         if getattr(event, "chat_id", None) != config.INTERNAL_CHAT_ID:
             return
         _write_trigger("rebuild")
-        await event.reply("🔄 Pełny rebuild zlecony — deploy.sh podejmie akcję w ciągu kilku sekund.")
+        await event.reply(
+            "🔄 Restart zlecony — deploy.sh zaciągnie origin/main, zrobi rebuild "
+            "i podejmie akcję w ciągu kilku sekund."
+        )
