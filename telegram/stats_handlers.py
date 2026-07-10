@@ -34,7 +34,7 @@ from stats.gis_archive import fetch_period
 from stats.prompts import (
     STATS_MODEL, STATS_SYSTEM_PROMPT, STATS_TYPE_LABELS, STATS_ADJUST_LABELS,
     STATS_ADJUST_INSTRUCTIONS, STATS_SHORTEN_LABELS, STATS_SHORTEN_INSTRUCTIONS,
-    build_records_blob, period_label, instruction_for, strip_title_prefix, strip_footer,
+    build_stats_blob, period_label, instruction_for, strip_title_prefix, strip_footer,
 )
 
 PERIOD_LABELS = {"month": "Miesiąc", "year": "Rok"}
@@ -162,7 +162,7 @@ def register_stats_handlers(bot):
                 print(f"[STATS] titles/{period}: {len(records)} ostrzeżeń wylistowanych")
                 return
 
-            blob = build_records_blob(records)
+            blob = build_stats_blob(records)
             instruction = instruction_for(stat_type, label, len(records))
             source = f"Statystyki GIS — {label}"
 

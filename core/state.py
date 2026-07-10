@@ -39,8 +39,10 @@ def _serialize_post(post):
         "phase1_msg_id": post.get("phase1_msg_id"),
         "edit_chain": [s for s in post.get("edit_chain", []) if isinstance(s, str)],
         "tg_text": post.get("tg_text", ""),
+        "comment_text": post.get("comment_text", ""),
         "parent_msg_id": post.get("parent_msg_id"),
         "fb_post_id": post.get("fb_post_id", ""),
+        "repeat_context": post.get("repeat_context") or {},
         "created_at": post.get("created_at", time.time()),
     }
 

@@ -5,19 +5,19 @@ from core.banners import BANNER_CLASSIFICATION_PROMPT
 _ONLY_POST = " Zwróć wyłącznie gotowy post — bez komentarza i bez opisu, co robisz."
 _ONLY_COMMENT = " Zwróć wyłącznie gotowy komentarz — bez komentarza i bez opisu, co robisz."
 
-# Emoji kategorii żywności (jedna ikona z właściwej grupy w hooku).
+# Emoji kategorii żywności + reguły powtórki.
 _FB_CATEGORY_EMOJI = """
-IKONY W HOOKU — dokładnie DWA emoji na początku hooka:
-1) Ikona ostrzeżenia: ⚠️ LUB 🚨 (naprzemiennie — raz jedna, raz druga; nie używaj obu naraz).
-2) Ikona kategorii produktu — ZAWSZE jedna z poniższych grup (dopasuj do produktu):
-   • Produkty zbożowe (chleb, mąka, pieczywo, kasze, makaron) → 🌾 lub 🍞
-   • Warzywa i owoce → 🥬 lub 🍎
-   • Mleko i przetwory mleczne (ser, jogurt, mleko) → 🥛 lub 🧀
-   • Mięso, ryby, jaja, dania gotowe (bigos, zupa) → 🥩 lub 🍲 lub 🥘 lub 🐟 lub 🥚
-   • Tłuszcze (olej, masło, margaryna) → 🫒 lub 🧈
-   • Cukier i słodycze (herbatniki, ciastka, cukierki, batoniki) → 🍪 lub 🍫 lub 🍬
-Format hooka: [⚠️ lub 🚨] [emoji kategorii] [zdanie]
-Przykład: «⚠️ 🥘 Kupujesz produkty bezglutenowe? Sprawdź, czy nie masz tego produktu w domu»
+IKONY W HOOKU — pierwsza linia posta:
+
+STANDARD (brak hintu KONTEKST POWTÓRKI):
+- Dokładnie DWA emoji: [ikona z hintu: ⚠️ LUB 🚨] + [jedna ikona kategorii produktu].
+- Kategorie: zboża → 🌾/🍞; warzywa/owoce → 🥬/🍎; nabiał → 🥛/🧀;
+  mięso/ryby/dania gotowe → 🥩/🍲/🥘/🐟/🥚; tłuszcze → 🫒/🧈; słodycze → 🍪/🍫/🍬.
+- Format: [⚠️ lub 🚨] [emoji kategorii] [zdanie hooka]
+
+POWTÓRKA W TYM MIESIĄCU (hint KONTEKST POWTÓRKI):
+- Ta sama bakteria → 😱 🦠 (ZAMIAST ⚠️/🚨 i ikony produktu).
+- Ten sam produkt → 😱 + ikona kategorii (bez ⚠️/🚨).
 """
 
 FB_SYSTEM_PROMPT = (
@@ -111,6 +111,16 @@ FB_PROMO_TEXT = (
     "📢 Telegram — więcej informacji i powiadomienia bezpośrednio na kanale:\n"
     "https://t.me/alertkonsumencki"
 )
+
+def FB_MANUAL_EDIT_INSTRUCTION(user_text: str) -> str:
+    """Mocna instrukcja dla ręcznej edycji posta FB."""
+    return (
+        f"POLECENIE REDAKTORA (NAJWYŻSZY PRIORYTET — wykonaj w pełni):\n{user_text}\n\n"
+        "Wykonaj polecenie DO KOŃCA — nie kosmetycznie. Zachowaj fakty ze źródła. "
+        "Wolno zmieniać hook, ton i strukturę, jeśli polecenie tego wymaga. "
+        "Zwróć wyłącznie gotowy post FB — bez komentarza."
+    )
+
 
 FB_REPHRASE_LABELS = {
     "fb_formal": "BARDZIEJ FORMALNY",

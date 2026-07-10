@@ -51,8 +51,11 @@ def make_url_adjust_buttons():
 
 
 def make_tg_published_buttons():
-    """Po publikacji na TG — wróć do głównego menu (inne platformy)."""
-    return [[Button.inline("↩️ Główne menu", b"phase1_menu")]]
+    """Po publikacji na TG — generuj FB lub wróć do Phase1."""
+    return [
+        [Button.inline("📘 Generuj FB", b"fb_start")],
+        [Button.inline("↩️ Główne menu", b"phase1_menu")],
+    ]
 
 
 def make_stats_period_buttons():

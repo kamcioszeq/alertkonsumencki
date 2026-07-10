@@ -54,6 +54,14 @@ def period_label(period: str) -> str:
     return f"{today.year} (styczeń–{today.strftime('%d.%m')})"
 
 
+def build_titles_index(records: list[dict]) -> str:
+    """Zwięzła lista tytułów okresu — daty + oczyszczone tytuły, jedna linia na wpis."""
+    lines = []
+    for r in sorted(records, key=lambda x: x["date"], reverse=True):
+        lines.append(f"- [{r['date']}] {strip_title_prefix(r['title'])}")
+    return "\n".join(lines)
+
+
 def build_records_blob(records: list[dict]) -> str:
     lines = []
     for r in records:
@@ -62,13 +70,28 @@ def build_records_blob(records: list[dict]) -> str:
     return "\n\n".join(lines)
 
 
+def build_stats_blob(records: list[dict]) -> str:
+    """Pełny blob do promptów statystycznych: indeks tytułów + szczegóły."""
+    titles_index = build_titles_index(records)
+    return (
+        f"LISTA TYTUŁÓW ({len(records)}):\n{titles_index}\n\n"
+        f"SZCZEGÓŁY:\n{build_records_blob(records)}"
+    )
+
+
+_TITLES_HINT = (
+    " Na początku masz LISTĘ TYTUŁÓW jako indeks skali i zakresu — korzystaj z niej "
+    "do liczb i orientacji; szczegółowe fakty bierz z sekcji SZCZEGÓŁY poniżej."
+)
+
+
 def _instruction_summary(label: str, count: int) -> str:
     return (
         f"Napisz angażujące PODSUMOWANIE OGÓLNE ostrzeżeń GIS za okres: {label}. "
         f"W tym okresie było ich łącznie {count}. Zacznij mocnym hookiem, wspomnij skalę "
         "problemu i 2-3 najciekawsze/najważniejsze przypadki z listy poniżej, zakończ "
         "zachętą do obserwowania kanału. Korzystaj WYŁĄCZNIE z danych podanych poniżej — "
-        "nie zmyślaj liczb ani faktów spoza listy."
+        "nie zmyślaj liczb ani faktów spoza listy." + _TITLES_HINT
     )
 
 
@@ -78,7 +101,7 @@ def _instruction_categories(label: str) -> str:
         "RODZAJU ZAGROŻENIA (np. bakterie: Listeria/Salmonella, alergeny, zanieczyszczenia "
         "chemiczne/metale, ciała obce, inne) i napisz angażujący post pokazujący, jaki typ "
         "zagrożenia dominował w tym okresie i dlaczego to ważne dla czytelnika. Liczby w "
-        "każdej kategorii policz sam na podstawie listy poniżej — nie zmyślaj."
+        "każdej kategorii policz sam na podstawie listy poniżej — nie zmyślaj." + _TITLES_HINT
     )
 
 
@@ -89,7 +112,7 @@ def _instruction_brands(label: str) -> str:
         "Napisz angażujący, ale rzeczowy post — bez oskarżycielskiego tonu. Jeśli w danych "
         "nie widać jednoznacznie powtarzających się marek, napisz to wprost i skup się na "
         "ogólnym obrazie (ile różnych producentów, jakie kategorie produktów). Nie zmyślaj "
-        "nazw, których nie ma w danych."
+        "nazw, których nie ma w danych." + _TITLES_HINT
     )
 
 
@@ -99,7 +122,7 @@ def _instruction_notable(label: str) -> str:
         "'klikalnych'/poważnych przypadków (największe ryzyko zdrowotne, najbardziej "
         "rozpoznawalne produkty, największa skala wycofania) i opisz je w formie chwytliwego "
         "wypunktowania z krótkim komentarzem do każdego. Korzystaj wyłącznie z podanych "
-        "faktów — nie zmyślaj szczegółów."
+        "faktów — nie zmyślaj szczegółów." + _TITLES_HINT
     )
 
 

@@ -7,12 +7,13 @@ from core.banners import apply_banner_from_llm
 from . import config
 from .prompts import (
     SYSTEM_PROMPT, ALERT_VARIANT_SYSTEM, REPHRASE_INSTRUCTIONS, REPHRASE_LABELS,
-    SHORTEN_INSTRUCTIONS, SHORTEN_LABELS, STYLE_NAMES,
+    SHORTEN_INSTRUCTIONS, SHORTEN_LABELS, STYLE_NAMES, MANUAL_EDIT_INSTRUCTION,
 )
 from .buttons import make_url_adjust_buttons, make_shorten_buttons, make_tg_published_buttons
 from .format import fit_telegram_text
 from .publish import send_preview, publish_to_channel, show_loading, restore_phase1_menu, handle_phase1_menu, notify_reviewers
-from core.claude import ask_claude
+from core.claude import ask_claude, edit_claude
+from core import shared_facts
 from core.state import pending_posts, track_post, save_state
 
 # Rephrase + percentage-shorten share the same regenerate flow.
@@ -69,6 +70,10 @@ def register_handlers(bot):
                 buttons=make_tg_published_buttons(),
             )
             post["platform"] = "published"
+            shared_facts.merge(
+                post.get("phase1_msg_id", msg_id),
+                original_text=post.get("original_text", ""),
+            )
             await restore_phase1_menu(bot, post)
             save_state()
             return
@@ -172,9 +177,11 @@ def register_handlers(bot):
             await event.reply("Tekst zaktualizowany.")
         else:
             await event.reply("Przerabiam...")
-            new_text_raw = await ask_claude(
-                post["text"], post["source"],
-                f"Zastosuj do powyższego alertu polecenie: {text}. Zwróć wyłącznie gotowy post.",
+            new_text_raw = await edit_claude(
+                post["text"],
+                MANUAL_EDIT_INSTRUCTION(text),
+                source_facts=post.get("original_text", ""),
+                source=post.get("source", ""),
                 system_prompt=_system_for(post),
             )
             if new_text_raw.startswith("Błąd Claude"):

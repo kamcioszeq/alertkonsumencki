@@ -24,8 +24,9 @@ def make_fb_adjust_buttons():
 
 
 def make_fb_published_buttons():
-    """Po publikacji na FB — PROMO + powrót do głównego menu."""
+    """Po publikacji na FB — generuj TG, PROMO, powrót do Phase1."""
     return [
+        [Button.inline("➡️ Generuj TG", b"tg_start")],
         [Button.inline("📣 PROMO", b"fb_promo")],
         [Button.inline("↩️ Główne menu", b"phase1_menu")],
     ]

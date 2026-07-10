@@ -6,10 +6,12 @@ from telethon import events
 
 import config as root_config
 from core.banners import apply_banner_from_llm
-from core.claude import ask_claude
+from core import shared_facts
+from core.claude import ask_claude, edit_claude
+from core.resolve_artifacts import resolve_artifacts, build_source_text
 from core.state import pending_posts, track_post, save_state
 from telegram.config import INTERNAL_CHAT_ID, REVIEWER_IDS
-from telegram.publish import show_loading, send_preview, restore_phase1_menu, restore_buttons, handle_phase1_menu
+from telegram.publish import show_loading, send_preview, restore_phase1_menu, handle_phase1_menu
 from telegram.buttons import (
     make_url_confirm_buttons, make_url_publish_buttons, make_url_adjust_buttons,
 )
@@ -20,6 +22,7 @@ from .prompts import (
     FB_SYSTEM_PROMPT, FB_COMMENT_SYSTEM_PROMPT,
     FB_GENERATE_INSTRUCTION, FB_GENERATE_FROM_SOURCE, FB_COMMENT_GENERATE_INSTRUCTION,
     FB_PROMO_TEXT, FB_ADJUST_INSTRUCTIONS, FB_ADJUST_LABELS, FB_STYLE_NAMES,
+    FB_MANUAL_EDIT_INSTRUCTION,
     fit_fb_text, format_fb_preview,
 )
 from .publish import publish_to_facebook, comment_on_facebook, html_to_plain
@@ -47,7 +50,6 @@ async def _send_fb_preview(bot, text: str, buttons, *, reply_to=None):
 
 
 async def _generate_fb_comment(source_text: str, source: str) -> str:
-    """Komentarz ze szczegółami partii — publikowany auto pod postem głównym."""
     raw = await ask_claude(
         source_text, source or "fb",
         FB_COMMENT_GENERATE_INSTRUCTION,
@@ -65,11 +67,18 @@ async def _regen_fb(bot, post: dict, instruction: str, *, label: str):
     return _process_fb_text(rewritten, fallback=post.get("image"))
 
 
-async def _generate_fb_draft(bot, *, source_text, source, instruction, anchor,
-                             image="", tg_text="", original_text="", parent_msg_id=None):
+async def _generate_fb_draft(
+    bot, *, source_text, source, instruction, anchor,
+    image="", tg_text="", original_text="", parent_msg_id=None,
+    icon_hint="", comment_text="",
+):
     """Wygeneruj draft FB (post + komentarz), wyślij podgląd. Zwraca (sent, fb_text)."""
+    full_instruction = instruction
+    if icon_hint:
+        full_instruction += f"\n\n{icon_hint}"
+
     fb_text_raw = await ask_claude(
-        source_text, source or "telegram", instruction, system_prompt=FB_SYSTEM_PROMPT,
+        source_text, source or "telegram", full_instruction, system_prompt=FB_SYSTEM_PROMPT,
     )
     if fb_text_raw.startswith("Błąd Claude"):
         return None, fb_text_raw
@@ -79,7 +88,7 @@ async def _generate_fb_draft(bot, *, source_text, source, instruction, anchor,
     )
 
     comment_src = original_text or source_text
-    fb_comment = await _generate_fb_comment(comment_src, source or "telegram")
+    fb_comment = comment_text or await _generate_fb_comment(comment_src, source or "telegram")
     if fb_comment.startswith("Błąd Claude"):
         return None, fb_comment
 
@@ -99,11 +108,31 @@ async def _generate_fb_draft(bot, *, source_text, source, instruction, anchor,
         "edit_chain": ["fb_generated"],
     }
     pending_posts[sent.id] = track_post(pending_posts, fb_post, sent_id=sent.id)
+    shared_facts.merge(anchor, original_text=original_text or source_text,
+                       comment_text=fb_comment, source=source or "")
     return sent, fb_text
 
 
-async def generate_fb_from_source(bot, *, article_text, source, image, anchor):
-    """Faza 1: wygeneruj post FB wprost z surowego źródła (nie z draftu TG)."""
+async def generate_fb_from_artifacts(bot, *, artifacts: dict, anchor: int, icon_hint: str = ""):
+    """Generuj FB z zebranych artefaktów (Phase1 / opublikowany TG)."""
+    source_text = artifacts.get("original_text") or build_source_text(artifacts)
+    if not source_text.strip():
+        return None, "Brak treści źródłowej"
+    return await _generate_fb_draft(
+        bot,
+        source_text=source_text,
+        source=artifacts.get("source", "telegram"),
+        instruction=FB_GENERATE_FROM_SOURCE,
+        anchor=anchor,
+        image=artifacts.get("image", ""),
+        original_text=source_text,
+        icon_hint=icon_hint,
+        comment_text=artifacts.get("comment_text", ""),
+    )
+
+
+async def generate_fb_from_source(bot, *, article_text, source, image, anchor, icon_hint=""):
+    """Faza 1: wygeneruj post FB wprost z surowego źródła."""
     return await _generate_fb_draft(
         bot,
         source_text=article_text,
@@ -112,7 +141,53 @@ async def generate_fb_from_source(bot, *, article_text, source, image, anchor):
         anchor=anchor,
         image=image,
         original_text=article_text,
+        icon_hint=icon_hint,
     )
+
+
+async def generate_tg_from_artifacts(bot, *, artifacts: dict, anchor: int, parent_msg_id=None):
+    """Generuj draft TG z artefaktów (FB draft / opublikowany FB)."""
+    source_text = build_source_text(artifacts)
+    if not source_text.strip():
+        return None
+
+    instruction = _build_draft_instruction("")
+    from core.gen_context import build_icon_hint
+    icon_hint = await build_icon_hint(
+        anchor, source_text, artifacts.get("source", "fb"), artifacts.get("title", ""),
+    )
+    instruction += f"\n\n{icon_hint}"
+
+    tg_raw = await ask_claude(
+        source_text, artifacts.get("source", "fb"),
+        instruction, system_prompt=SYSTEM_PROMPT,
+    )
+    if tg_raw.startswith("Błąd Claude"):
+        return None
+
+    tg_text, banner = apply_banner_from_llm(
+        tg_raw, fallback=artifacts.get("image") or root_config.ALERT_IMAGE,
+    )
+    tg_text = fit_telegram_text(tg_text)
+    sent = await send_preview(bot, tg_text, make_url_confirm_buttons(), reply_to=anchor)
+    tg_post = {
+        "text": tg_text,
+        "original_text": artifacts.get("original_text", source_text),
+        "source": artifacts.get("source", ""),
+        "platform": "url_article",
+        "phase": "confirm",
+        "article_url": artifacts.get("article_url", ""),
+        "user_instruction": artifacts.get("user_instruction", ""),
+        "title": artifacts.get("title", ""),
+        "image": banner,
+        "phase1_msg_id": anchor,
+        "parent_msg_id": parent_msg_id,
+        "edit_chain": ["url_draft"],
+        "repeat_context": artifacts.get("repeat_context") or {},
+    }
+    pending_posts[sent.id] = track_post(pending_posts, tg_post, sent_id=sent.id)
+    shared_facts.merge(anchor, original_text=artifacts.get("original_text", source_text))
+    return sent
 
 
 def _tg_buttons_for_phase(phase: str):
@@ -136,27 +211,67 @@ def register_facebook_handlers(bot):
             await handle_phase1_menu(bot, event, msg_id)
             return
 
-        # ── Start FB path from a Telegram draft ──
+        # ── Generuj TG z FB (draft lub opublikowany) ──
+        if data == "tg_start":
+            post = pending_posts.get(msg_id)
+            if not post or post.get("platform") not in ("fb_draft", "fb_published"):
+                return
+
+            await event.answer("Generuję wersję Telegram...")
+            await show_loading(event, "Generuję wersję TG...")
+            print("[TG] Generuję wersję Telegram z artefaktów FB...")
+
+            anchor = post.get("phase1_msg_id") or msg_id
+            artifacts = await resolve_artifacts(bot, anchor)
+            artifacts = {**artifacts, **{k: post.get(k) for k in (
+                "original_text", "comment_text", "source", "title", "image", "repeat_context",
+            ) if post.get(k)}}
+
+            sent = await generate_tg_from_artifacts(
+                bot, artifacts=artifacts, anchor=anchor, parent_msg_id=msg_id,
+            )
+            if not sent:
+                await event.answer("Błąd generowania wersji TG", alert=True)
+                try:
+                    buttons = (
+                        make_fb_published_buttons()
+                        if post.get("platform") == "fb_published"
+                        else make_fb_adjust_buttons()
+                    )
+                    await (await event.get_message()).edit(buttons=buttons)
+                except Exception:
+                    pass
+                return
+
+            await restore_phase1_menu(bot, post)
+            return
+
+        # ── Generuj FB z draftu TG lub opublikowanego TG ──
         if data == "fb_start":
             tg_post = pending_posts.get(msg_id)
-            if not tg_post or tg_post.get("platform") != "url_article":
+            if not tg_post or tg_post.get("platform") not in ("url_article", "published"):
                 return
 
             await event.answer("Generuję wersję FB...")
             await show_loading(event, "Generuję wersję FB...")
-            print("[FB] Generuję krótką wersję na Facebooka...")
+            print("[FB] Generuję wersję na Facebooka z artefaktów TG...")
 
             anchor = tg_post.get("phase1_msg_id") or msg_id
-            sent, fb_text = await _generate_fb_draft(
-                bot,
-                source_text=html_to_plain(tg_post["text"]),
-                source=tg_post.get("source", "telegram"),
-                instruction=FB_GENERATE_INSTRUCTION,
-                anchor=anchor,
-                image=tg_post.get("image", ""),
-                tg_text=tg_post["text"],
-                original_text=tg_post.get("original_text", ""),
-                parent_msg_id=msg_id,
+            artifacts = await resolve_artifacts(bot, anchor)
+            artifacts = {**artifacts, **{k: tg_post.get(k) for k in (
+                "original_text", "source", "title", "image", "repeat_context", "text",
+            ) if tg_post.get(k)}}
+
+            from core.gen_context import build_icon_hint
+            source_text = artifacts.get("original_text") or build_source_text(artifacts)
+            icon_hint = await build_icon_hint(
+                anchor, source_text,
+                artifacts.get("source", "telegram"),
+                artifacts.get("title", ""),
+            )
+
+            sent, err = await generate_fb_from_artifacts(
+                bot, artifacts=artifacts, anchor=anchor, icon_hint=icon_hint,
             )
             if not sent:
                 await event.answer("Błąd generowania wersji FB", alert=True)
@@ -164,12 +279,12 @@ def register_facebook_handlers(bot):
 
             try:
                 tg_msg = await event.get_message()
-                await tg_msg.edit(buttons=_tg_buttons_for_phase(tg_post.get("phase", "confirm")))
+                if tg_post.get("platform") == "url_article":
+                    await tg_msg.edit(buttons=_tg_buttons_for_phase(tg_post.get("phase", "confirm")))
             except Exception:
                 pass
             return
 
-        # ── PROMO: komentarz zapraszający do społeczności pod opublikowanym postem ──
         if data == "fb_promo":
             promo_post = pending_posts.get(msg_id)
             fb_post_id = promo_post.get("fb_post_id") if promo_post else None
@@ -186,10 +301,10 @@ def register_facebook_handlers(bot):
             original_msg = await event.get_message()
             if ok:
                 print(f"[PROMO_FB] OK: {result}")
-                pending_posts.pop(msg_id, None)
                 save_state()
                 await original_msg.edit(
-                    original_msg.text + "\n\n📣 PROMO DODANE W KOMENTARZU", buttons=None,
+                    original_msg.text + "\n\n📣 PROMO DODANE W KOMENTARZU",
+                    buttons=make_fb_published_buttons(),
                 )
                 return
             print(f"[PROMO_FB] Błąd: {result}")
@@ -202,54 +317,6 @@ def register_facebook_handlers(bot):
 
         post = pending_posts.get(msg_id)
         if not post or post.get("platform") != "fb_draft":
-            return
-
-        # ── Zrób osobną wersję Telegram z tego draftu FB (w drugą stronę) ──
-        if data == "tg_start":
-            await event.answer("Generuję wersję Telegram...")
-            await show_loading(event, "Generuję wersję TG...")
-            print("[TG] Generuję wersję Telegram z draftu FB...")
-
-            src = post.get("original_text") or html_to_plain(post["text"])
-            tg_raw = await ask_claude(
-                src, post.get("source", "fb"),
-                _build_draft_instruction(""),
-                system_prompt=SYSTEM_PROMPT,
-            )
-            if tg_raw.startswith("Błąd Claude"):
-                await event.answer("Błąd generowania wersji TG", alert=True)
-                try:
-                    await (await event.get_message()).edit(buttons=make_fb_adjust_buttons())
-                except Exception:
-                    pass
-                return
-            tg_text, banner = apply_banner_from_llm(
-                tg_raw, fallback=post.get("image") or root_config.ALERT_IMAGE,
-            )
-            tg_text = fit_telegram_text(tg_text)
-
-            anchor = post.get("phase1_msg_id")
-            sent = await send_preview(bot, tg_text, make_url_confirm_buttons(), reply_to=anchor)
-            tg_post = {
-                "text": tg_text,
-                "original_text": post.get("original_text", ""),
-                "source": post.get("source", ""),
-                "platform": "url_article",
-                "phase": "confirm",
-                "article_url": "",
-                "user_instruction": "",
-                "title": "",
-                "image": banner,
-                "phase1_msg_id": anchor,
-                "parent_msg_id": msg_id,
-                "edit_chain": ["url_draft"],
-            }
-            pending_posts[sent.id] = track_post(pending_posts, tg_post, sent_id=sent.id)
-
-            try:
-                await (await event.get_message()).edit(buttons=make_fb_adjust_buttons())
-            except Exception:
-                pass
             return
 
         if data == "fb_pub":
@@ -279,7 +346,12 @@ def register_facebook_handlers(bot):
                     buttons=make_fb_published_buttons(),
                 )
                 post["platform"] = "fb_published"
-                post["fb_post_id"] = result  # potrzebne do PROMO w komentarzu
+                post["fb_post_id"] = result
+                shared_facts.merge(
+                    post.get("phase1_msg_id", msg_id),
+                    original_text=post.get("original_text", ""),
+                    comment_text=post.get("comment_text", ""),
+                )
                 await restore_phase1_menu(bot, post)
                 save_state()
                 return
@@ -357,6 +429,7 @@ def register_facebook_handlers(bot):
             post.setdefault("edit_chain", []).append(data)
             pending_posts.pop(msg_id, None)
             pending_posts[sent.id] = track_post(pending_posts, post, sent_id=sent.id)
+            shared_facts.merge(anchor, comment_text=post.get("comment_text", ""))
 
             try:
                 await (await event.get_message()).delete()
@@ -387,9 +460,11 @@ def register_facebook_handlers(bot):
             await event.reply("Komentarz FB zaktualizowany.")
         else:
             await event.reply("Przerabiam wersję FB...")
-            new_text = await ask_claude(
-                post["text"], post.get("source", "fb"),
-                f"Zastosuj do powyższego posta FB polecenie: {text}. Zwróć wyłącznie gotowy post.",
+            new_text = await edit_claude(
+                post["text"],
+                FB_MANUAL_EDIT_INSTRUCTION(text),
+                source_facts=post.get("original_text", ""),
+                source=post.get("source", "fb"),
                 system_prompt=FB_SYSTEM_PROMPT,
             )
             post["text"], post["image"] = _process_fb_text(
@@ -401,3 +476,5 @@ def register_facebook_handlers(bot):
         sent = await _send_fb_preview(bot, preview, make_fb_adjust_buttons(), reply_to=anchor)
         pending_posts.pop(original_msg_id, None)
         pending_posts[sent.id] = track_post(pending_posts, post, sent_id=sent.id)
+        if anchor:
+            shared_facts.merge(anchor, comment_text=post.get("comment_text", ""))

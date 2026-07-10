@@ -20,8 +20,8 @@ SYSTEM_PROMPT = (
     "Blockquote rezerwuj WYŁĄCZNIE na to jedno zalecenie — nie wstawiaj tam surowych zdań "
     "ze źródła.\n"
     "\n"
-    "NAGŁÓWEK (pierwsza linia): <b>⚠️ [emoji produktu] Krótki tytuł — czego dotyczy</b>. "
-    "Max 8-10 słów. Przykład: <b>⚠️🧀 Wycofanie sera — ryzyko listerii</b>.\n"
+    "NAGŁÓWEK / HOOK (pierwsza linia): ikony z hintu (⚠️ lub 🚨 + kategoria, albo 😱🦠 przy powtórce) "
+    "+ mocne zdanie. Max 8-10 słów w linii tytułu pod hookiem, jeśli stosujesz osobny nagłówek.\n"
     "Po nagłówku zostaw pustą linię, potem treść.\n"
     "\n"
     "STRUKTURA TREŚCI — ułóż DOKŁADNIE w tej kolejności, NIEZALEŻNIE od kolejności w źródle:\n"
@@ -73,25 +73,29 @@ ALERT_VARIANT_SYSTEM = (
     "Co zrobić:, Zalecenie:, Partia:, Termin:, Szczegóły partii:, Źródło:, Oficjalny komunikat:) "
     "pisz pogrubioną: <b>Etykieta:</b>. "
     "Post ZAWSZE zaczyna się od mocnego, przyciągającego HOOKA (pierwsza linia) i to w NIM są "
-    "ikony ⚠️ + adaptacyjna — NIE przy tytule. Przy KAŻDEJ edycji zachowaj ten hook na samej górze. "
+    "ikony ⚠️/🚨 (z hintu) + adaptacyjna — NIE przy tytule. Przy KAŻDEJ edycji zachowaj ten hook na samej górze. "
     "Korzystaj wyłącznie z podanych informacji — nie wymyślaj danych. "
     "Zwróć wyłącznie gotowy post, bez komentarza i bez opisu, co robisz. "
     "Na końcu dodaj stopkę w osobnej linii: <b>Alert konsumencki</b> | @alertkonsumencki"
     + BANNER_CLASSIFICATION_PROMPT
 )
 
-# Wspólne reguły doboru „adaptacyjnej" ikony w nagłówku (obok ⚠️).
+# Wspólne reguły doboru ikon w hooku (pierwsza linia).
 _ADAPTIVE_ICON_RULES = """
-Adaptive icon (obok ⚠️): dobierz JEDNĄ dodatkową ikonę pasującą do kategorii produktu lub zagrożenia.
-Przykłady: mięso/danie gotowe/bigos/kiełbasa → 🍲 lub 🥩; ryby/owoce morza → 🐟;
-nabiał/mleko/ser/jogurt → 🥛 lub 🧀; pieczywo/gluten/mąka/chleb → 🌾 lub 🍞; słodycze/przekąski → 🍫 lub 🍪;
-napoje → 🥤; żywność dla dzieci → 👶; lek/suplement → 💊; kosmetyki → 🧴; elektronika → 🔌; zabawka → 🧸;
-skażenie mikrobiologiczne → 🦠; ciało obce (szkło/plastik/metal) → 🔎; alergen → 🌾/🥜/🥛; nieznane → 📦.
-Zasady: dokładnie jedna ikona adaptacyjna; jeśli gluten/mąka/pieczywo/zboża → 🌾;
-mikrobiologia → 🦠; zanieczyszczenie fizyczne (szkło/plastik/metal) → 🔎; kategoria niejasna → 📦.
+Ikony w HOOKU (pierwsza linia) — NIE przy tytule/nagłówku produktu:
+
+STANDARD (brak powtórki w miesiącu):
+- Dokładnie DWA emoji: [ikona ostrzeżenia z hintu: ⚠️ LUB 🚨] + [jedna ikona kategorii produktu].
+- Ikona kategorii — przykłady: mięso/dania gotowe → 🍲/🥩; ryby → 🐟; nabiał → 🥛/🧀;
+  pieczywo/gluten → 🌾/🍞; słodycze → 🍫/🍪; napoje → 🥤; lek → 💊; kosmetyki → 🧴;
+  mikrobiologia → 🦠; ciało obce → 🔎; nieznane → 📦.
+- Format: [⚠️ lub 🚨] [ikona kategorii] [mocne zdanie hooka]
+
+POWTÓRKA W TYM MIESIĄCU (hint KONTEKST POWTÓRKI w instrukcji):
+- Ta sama bakteria co wcześniej → 😱 🦠 (ZAMIAST ⚠️/🚨 i ikony produktu).
+- Ten sam produkt, inne zagrożenie → 😱 + ikona kategorii (bez ⚠️/🚨).
+
 Bez ikon śmiesznych, dziecinnych ani przesadnie dramatycznych.
-WAŻNE: ikony (⚠️ + adaptacyjna) umieść w LINII HOOK (pierwsza linia), NIE przy tytule.
-Format hooka: ⚠️ [adaptive icon] [mocne, przyciągające zdanie]
 """
 
 SHORT_ALERT_TEMPLATE = """Generate a short Polish consumer alert based only on the provided source text.
@@ -191,6 +195,45 @@ def _build_alert_instruction(template: str, user_instruction: str = "") -> str:
     if user_instruction:
         instruction += f"\n\nWAŻNE — instrukcja użytkownika (PRIORYTET):\n{user_instruction}"
     return instruction
+
+
+def MANUAL_EDIT_INSTRUCTION(user_text: str) -> str:
+    """Mocna instrukcja dla ręcznej edycji (reply bez prefiksu !)."""
+    return (
+        f"POLECENIE REDAKTORA (NAJWYŻSZY PRIORYTET — wykonaj w pełni, nie kosmetycznie):\n"
+        f"{user_text}\n\n"
+        "Zasady:\n"
+        "- Wykonaj polecenie DO KOŃCA — jeśli prosisz o zmianę hooka, tonu, dodanie sieci sklepu "
+        "czy przepisanie sekcji, zrób to wyraźnie, nie minimalnie.\n"
+        "- Zachowaj wszystkie fakty z materiału źródłowego — nie wymyślaj nowych danych.\n"
+        "- Wolno zmieniać sformułowania, strukturę, długość i ton, jeśli polecenie tego wymaga.\n"
+        "- Jeśli polecenie dotyczy wyłącznie drobnej poprawki — zmień tylko to, o co proszono.\n"
+        "- Nie generuj posta od zera — edytuj bieżący draft.\n"
+        "Zwróć wyłącznie gotowy post — bez komentarza i bez opisu, co robisz."
+    )
+
+
+def icon_hint_instruction(repeat_context: dict | None, warning_icon: str) -> str:
+    """Krótki hint ikon hooka do doklejenia do instrukcji generowania."""
+    if repeat_context and repeat_context.get("is_repeat"):
+        rtype = repeat_context.get("repeat_type")
+        if rtype == "bacteria":
+            bacteria = ", ".join(repeat_context.get("matched_bacteria") or ["bakteria"])
+            dates = repeat_context.get("prior_dates") or []
+            dates_str = ", ".join(dates[:5])
+            return (
+                f"KONTEKST POWTÓRKI: W tym miesiącu ta sama bakteria ({bacteria}) pojawiła się "
+                f"już wcześniej ({dates_str}). Użyj w hooku ikon: 😱 🦠 (zamiast {warning_icon} "
+                "i ikony produktu). W treści możesz delikatnie zaznaczyć powtarzalność — tylko "
+                "jeśli wynika to wprost z faktów."
+            )
+        if rtype == "product":
+            product = repeat_context.get("matched_product") or "produkt"
+            return (
+                f"KONTEKST POWTÓRKI: Ten produkt ({product}) miał już alert w tym miesiącu. "
+                f"Użyj w hooku: 😱 + ikona kategorii produktu (bez {warning_icon})."
+            )
+    return f"Ikona ostrzeżenia w hooku (pierwsza linia): {warning_icon} + jedna ikona kategorii produktu."
 
 
 REPHRASE_LABELS = {
