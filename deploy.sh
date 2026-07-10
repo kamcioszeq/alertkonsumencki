@@ -235,7 +235,8 @@ while true; do
             sync_from_main || info "Git sync failed — rebuild z obecnego drzewa."
             rebuild
         else
-            log "Manual /redeploy trigger detected. Redeploying..."
+            log "Manual /redeploy trigger detected. git pull + redeploy..."
+            sync_from_main || info "Git sync failed — deploy z obecnego drzewa."
             deploy
         fi
         notify_telegram "✅ System redeployment done"

@@ -25,7 +25,10 @@ def register_deploy_commands(bot):
         if getattr(event, "chat_id", None) != config.INTERNAL_CHAT_ID:
             return
         _write_trigger("deploy")
-        await event.reply("🔄 Redeploy zlecony — deploy.sh podejmie akcję w ciągu kilku sekund.")
+        await event.reply(
+            "🔄 Redeploy zlecony — deploy.sh zaciągnie origin/main, zbuduje i "
+            "podejmie akcję w ciągu kilku sekund."
+        )
 
     @bot.on(events.NewMessage(pattern=r"^/restart$"))
     async def on_restart(event):
