@@ -72,6 +72,7 @@ def make_stats_type_buttons(period: str):
         [Button.inline("🏷 Najczęstsze marki", f"stats_type:brands:{period}".encode())],
         [Button.inline("🔥 Najgłośniejsze przypadki", f"stats_type:notable:{period}".encode())],
         [Button.inline("📋 Lista tytułów", f"stats_type:titles:{period}".encode())],
+        [Button.inline("🎨 Custom", f"stats_custom:{period}".encode())],
         [Button.inline("← Wróć", b"stats_back")],
     ]
 
@@ -86,6 +87,22 @@ def make_stats_adjust_buttons():
         [Button.inline("💬 Odpowiedz", b"stats_edit")],
         [Button.inline("↩️ Cofnij", b"stats_undo"), Button.inline("Odrzuć", b"stats_reject")],
     ]
+
+
+def make_stats_shared_buttons(*, tg_done: bool, fb_done: bool):
+    """Po udostępnieniu na TG i/lub FB — pokazuje TYLKO to, co jeszcze nie zostało
+    zrobione (druga platforma, PROMO), żeby jedna publikacja nie blokowała drugiej."""
+    rows = []
+    share_row = []
+    if not tg_done:
+        share_row.append(Button.inline("📤 Share → TG", b"stats_share:tg"))
+    if not fb_done:
+        share_row.append(Button.inline("📘 Share → FB", b"stats_share:fb"))
+    if share_row:
+        rows.append(share_row)
+    if fb_done:
+        rows.append([Button.inline("📣 PROMO", b"fb_promo")])
+    return rows or None
 
 
 def make_shorten_buttons():

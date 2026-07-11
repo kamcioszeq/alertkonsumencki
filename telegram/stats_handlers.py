@@ -23,20 +23,26 @@ import config as root_config
 from core.banners import apply_banner_from_llm
 from core.claude import ask_claude
 from core.state import pending_posts, track_post
-from facebook.buttons import make_fb_published_buttons
 from facebook.publish import html_to_plain, publish_to_facebook
 from . import config
-from .buttons import make_stats_period_buttons, make_stats_type_buttons, make_stats_adjust_buttons
+from .buttons import (
+    make_stats_period_buttons, make_stats_type_buttons, make_stats_adjust_buttons,
+    make_stats_shared_buttons,
+)
 from .format import fit_telegram_text
 from .publish import send_preview, publish_to_channel, show_loading, notify_reviewers
 from stats.gis_archive import fetch_period
 from stats.prompts import (
     STATS_MODEL, STATS_SYSTEM_PROMPT, STATS_TYPE_LABELS, STATS_ADJUST_LABELS,
     STATS_ADJUST_INSTRUCTIONS, build_stats_blob, period_label, instruction_for,
-    strip_title_prefix, strip_footer,
+    custom_instruction, strip_title_prefix, strip_footer,
 )
 
 PERIOD_LABELS = {"month": "Miesiąc", "year": "Rok"}
+
+# msg_id (wiadomości z prośbą "napisz czego ma dotyczyć") -> period, dopóki użytkownik
+# nie odpowie. Ulotny, w pamięci — nie trzeba go przeżywać restartu bota.
+_pending_custom: dict[int, str] = {}
 
 
 def _chunk_lines(lines, max_chars=3500):
@@ -95,6 +101,51 @@ async def _regen_and_resend(bot, post, msg_id, instruction, *, chain_key=None):
     return True, sent
 
 
+async def _generate_stats_draft(bot, *, period, build_instruction, title, chain_key=None, reply_to=None):
+    """Ściąga dane za `period`, generuje draft wg instrukcji zwróconej przez
+    `build_instruction(records, label)`, wysyła podgląd. Wspólne dla ścieżki z gotowym
+    typem statystyk i ścieżki Custom (własna instrukcja użytkownika).
+    Zwraca (ok, sent_msg_or_error_str)."""
+    try:
+        records = await fetch_period(period)
+    except Exception as e:
+        print(f"[STATS] Błąd pobierania listingu GIS: {e}")
+        return False, f"Nie udało się pobrać danych GIS: {e}"
+
+    if not records:
+        return False, f"Brak ostrzeżeń GIS w tym okresie ({PERIOD_LABELS[period]})."
+
+    label = period_label(period)
+    blob = build_stats_blob(records)
+    source = f"Statystyki GIS — {label}"
+    instruction = build_instruction(records, label)
+
+    draft_raw = await ask_claude(
+        blob, source, instruction, system_prompt=STATS_SYSTEM_PROMPT, model=STATS_MODEL,
+    )
+    if draft_raw.startswith("Błąd Claude"):
+        return False, draft_raw
+
+    draft, banner = apply_banner_from_llm(draft_raw, fallback=root_config.ALERT_IMAGE)
+    draft = fit_telegram_text(draft)
+
+    post = {
+        "text": draft,
+        "original_text": blob,
+        "source": source,
+        "platform": "stats_post",
+        "has_url": False,
+        "title": f"{title} — {label}",
+        "image": banner,
+        "edit_chain": [chain_key] if chain_key else [],
+        "history": [],
+    }
+    sent = await send_preview(bot, draft, make_stats_adjust_buttons(), reply_to=reply_to)
+    pending_posts[sent.id] = track_post(pending_posts, post, sent_id=sent.id)
+    print(f"[STATS] {chain_key or 'custom'}/{period}: {len(records)} ostrzeżeń → msg_id={sent.id}")
+    return True, sent
+
+
 def register_stats_handlers(bot):
     @bot.on(events.NewMessage(pattern=r"^/stats$"))
     async def on_stats(event):
@@ -127,32 +178,42 @@ def register_stats_handlers(bot):
             )
             return
 
+        if data.startswith("stats_custom:"):
+            period = data.split(":", 1)[1]
+            await event.answer()
+            msg = await event.get_message()
+            await msg.edit(
+                f"✍️ Napisz, czego ma dotyczyć podsumowanie ({PERIOD_LABELS[period]}) — "
+                "np. 'skup się na alergenach' albo 'porównaj do zeszłego miesiąca'. "
+                "Odpowiedz na tę wiadomość:",
+                buttons=None,
+            )
+            _pending_custom[msg_id] = period
+            return
+
         if data.startswith("stats_type:"):
             _, stat_type, period = data.split(":")
             await event.answer("Zbieram dane...")
             await show_loading(event, "Zbieram statystyki GIS...")
 
-            try:
-                records = await fetch_period(period)
-            except Exception as e:
-                print(f"[STATS] Błąd pobierania listingu GIS: {e}")
-                await notify_reviewers(bot, html.escape(f"⚠️ Błąd pobierania statystyk GIS ({period}): {e}"))
-                await (await event.get_message()).edit(
-                    "Nie udało się pobrać danych GIS. Spróbuj ponownie później.",
-                    buttons=make_stats_period_buttons(),
-                )
-                return
-
-            if not records:
-                await (await event.get_message()).edit(
-                    f"Brak ostrzeżeń GIS w tym okresie ({PERIOD_LABELS[period]}).",
-                    buttons=make_stats_period_buttons(),
-                )
-                return
-
-            label = period_label(period)
-
             if stat_type == "titles":
+                try:
+                    records = await fetch_period(period)
+                except Exception as e:
+                    print(f"[STATS] Błąd pobierania listingu GIS: {e}")
+                    await notify_reviewers(bot, html.escape(f"⚠️ Błąd pobierania statystyk GIS ({period}): {e}"))
+                    await (await event.get_message()).edit(
+                        "Nie udało się pobrać danych GIS. Spróbuj ponownie później.",
+                        buttons=make_stats_period_buttons(),
+                    )
+                    return
+                if not records:
+                    await (await event.get_message()).edit(
+                        f"Brak ostrzeżeń GIS w tym okresie ({PERIOD_LABELS[period]}).",
+                        buttons=make_stats_period_buttons(),
+                    )
+                    return
+                label = period_label(period)
                 lines = [
                     f"• {r['date']}: {strip_title_prefix(r['title'])}"
                     for r in sorted(records, key=lambda r: r["date"], reverse=True)
@@ -168,39 +229,23 @@ def register_stats_handlers(bot):
                 print(f"[STATS] titles/{period}: {len(records)} ostrzeżeń wylistowanych")
                 return
 
-            blob = build_stats_blob(records)
-            instruction = instruction_for(stat_type, label, len(records))
-            source = f"Statystyki GIS — {label}"
-
-            draft_raw = await ask_claude(
-                blob, source, instruction, system_prompt=STATS_SYSTEM_PROMPT, model=STATS_MODEL,
+            ok, result = await _generate_stats_draft(
+                bot, period=period,
+                build_instruction=lambda records, label, st=stat_type: instruction_for(st, label, len(records)),
+                title=STATS_TYPE_LABELS[stat_type],
+                chain_key=f"stats_{stat_type}",
             )
-            if draft_raw.startswith("Błąd Claude"):
-                await event.answer("Błąd generowania statystyk", alert=True)
-                await notify_reviewers(bot, html.escape(f"⚠️ Błąd Claude przy statystykach: {draft_raw}"))
+            if not ok:
+                if result.startswith("Błąd Claude"):
+                    await event.answer("Błąd generowania statystyk", alert=True)
+                    await notify_reviewers(bot, html.escape(f"⚠️ Błąd Claude przy statystykach: {result}"))
+                else:
+                    await (await event.get_message()).edit(result, buttons=make_stats_period_buttons())
                 return
-
-            draft, banner = apply_banner_from_llm(draft_raw, fallback=root_config.ALERT_IMAGE)
-            draft = fit_telegram_text(draft)
-
-            post = {
-                "text": draft,
-                "original_text": blob,
-                "source": source,
-                "platform": "stats_post",
-                "has_url": False,
-                "title": f"{STATS_TYPE_LABELS[stat_type]} — {label}",
-                "image": banner,
-                "edit_chain": [f"stats_{stat_type}"],
-                "history": [],
-            }
-            sent = await send_preview(bot, draft, make_stats_adjust_buttons())
-            pending_posts[sent.id] = track_post(pending_posts, post, sent_id=sent.id)
             try:
                 await event.delete()
             except Exception:
                 pass
-            print(f"[STATS] {stat_type}/{period}: {len(records)} ostrzeżeń → msg_id={sent.id}")
             return
 
         # ── Poniżej: akcje na już wygenerowanym poście statystycznym ──
@@ -279,9 +324,12 @@ def register_stats_handlers(bot):
                 except Exception:
                     pass
                 return
+            post["tg_published"] = True
             original_msg = await event.get_message()
-            await original_msg.edit(original_msg.text + "\n\n✅ OPUBLIKOWANO NA TG", buttons=None)
-            pending_posts.pop(msg_id, None)
+            await original_msg.edit(
+                original_msg.text + "\n\n✅ OPUBLIKOWANO NA TG",
+                buttons=make_stats_shared_buttons(tg_done=True, fb_done=bool(post.get("fb_post_id"))),
+            )
             return
 
         if data == "stats_share:fb":
@@ -304,7 +352,8 @@ def register_stats_handlers(bot):
             print(f"[STATS] Opublikowano na FB: {result}")
             post["fb_post_id"] = result
             await original_msg.edit(
-                original_msg.text + "\n\n✅ OPUBLIKOWANO NA FB", buttons=make_fb_published_buttons(),
+                original_msg.text + "\n\n✅ OPUBLIKOWANO NA FB",
+                buttons=make_stats_shared_buttons(tg_done=bool(post.get("tg_published")), fb_done=True),
             )
             return
 
@@ -317,6 +366,27 @@ def register_stats_handlers(bot):
             return
 
         reply_msg = await event.get_reply_message()
+
+        # Odpowiedź na "✍️ Napisz, czego ma dotyczyć..." z przycisku 🎨 Custom.
+        if reply_msg.id in _pending_custom:
+            period = _pending_custom.pop(reply_msg.id)
+            user_text = event.text.strip()
+            await event.reply("Generuję...")
+            ok, result = await _generate_stats_draft(
+                bot, period=period,
+                build_instruction=lambda records, label, t=user_text: custom_instruction(t),
+                title=STATS_TYPE_LABELS["custom"],
+                chain_key="stats_custom",
+                reply_to=reply_msg.id,
+            )
+            if not ok:
+                if result.startswith("Błąd Claude"):
+                    await notify_reviewers(bot, html.escape(f"⚠️ Błąd Claude przy custom statystykach: {result}"))
+                    await event.reply("Błąd modelu. Spróbuj ponownie później.")
+                else:
+                    await event.reply(result)
+            return
+
         original_msg_id = reply_msg.reply_to_msg_id if reply_msg.reply_to_msg_id else reply_msg.id
 
         post = pending_posts.get(original_msg_id)

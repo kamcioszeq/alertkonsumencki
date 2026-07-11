@@ -136,6 +136,7 @@ STATS_TYPE_LABELS = {
     "brands": "🏷 Najczęstsze marki",
     "notable": "🔥 Najgłośniejsze przypadki",
     "titles": "📋 Lista tytułów",
+    "custom": "🎨 Custom",
 }
 
 _BUILDERS = {
@@ -150,6 +151,16 @@ def instruction_for(stat_type: str, label: str, count: int) -> str:
     if stat_type == "summary":
         return _instruction_summary(label, count)
     return _BUILDERS[stat_type](label)
+
+
+def custom_instruction(user_text: str) -> str:
+    """Użytkownik sam pisze czego ma dotyczyć podsumowanie — jego tekst staje się
+    poleceniem, dane z okresu (poniżej) są materiałem źródłowym."""
+    return (
+        f"Na podstawie listy ostrzeżeń GIS podanej poniżej wykonaj polecenie: {user_text}\n"
+        "Napisz gotowy post w stylu podsumowania statystycznego. Korzystaj WYŁĄCZNIE "
+        "z podanych danych — nie zmyślaj liczb ani faktów spoza listy."
+    )
 
 
 # ─── Udostępnianie: TG zachowuje stopkę "Alert konsumencki | @alertkonsumencki"
