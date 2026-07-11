@@ -1,6 +1,7 @@
 """Facebook post prompts — main post + auto-comment with batch details."""
 
 from core.banners import BANNER_CLASSIFICATION_PROMPT
+from telegram.format import _trim_body
 
 _ONLY_POST = " Zwróć wyłącznie gotowy post — bez komentarza i bez opisu, co robisz."
 _ONLY_COMMENT = " Zwróć wyłącznie gotowy komentarz — bez komentarza i bez opisu, co robisz."
@@ -210,10 +211,9 @@ def fit_fb_text(text: str, *, max_chars: int = FB_MAX_CHARS) -> str:
         footer = "\n" + lines[-1].strip()
         body = "\n".join(lines[:-1]).rstrip()
     budget = max_chars - len(footer) - 1
-    truncated = body[:budget].rstrip()
-    if " " in truncated:
-        truncated = truncated.rsplit(" ", 1)[0]
-    return truncated + "…" + footer
+    truncated, needs_ellipsis = _trim_body(body, budget)
+    suffix = "…" if needs_ellipsis else ""
+    return truncated + suffix + footer
 
 
 def format_fb_preview(main: str, comment: str) -> str:

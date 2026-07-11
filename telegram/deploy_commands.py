@@ -26,7 +26,7 @@ TRIGGER_LABELS = {
     "cli": "ręcznie (terminal)",
 }
 
-MODE_LABELS = {"deploy": "deploy", "rebuild": "rebuild (bez cache)", "restart": "restart (bez builda)"}
+MODE_LABELS = {"deploy": "deploy", "rebuild": "rebuild (z cache Dockera)", "restart": "restart (bez builda)"}
 
 
 def _write_trigger(mode: str):

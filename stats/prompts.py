@@ -37,6 +37,10 @@ STATS_SYSTEM_PROMPT = (
     "żargonu biurokratycznego. Emoji owszem, ale z umiarem.\n\n"
     "Formatowanie: HTML — <b>bold</b> do wyróżnień, NIGDY Markdown (**bold**). "
     "Zwracasz WYŁĄCZNIE gotowy post — bez wstępu, bez komentarza, bez opisu co robisz.\n\n"
+    "LIMIT DŁUGOŚCI: cały post (nagłówek + treść + stopka) musi zmieścić się w wiadomości "
+    "tekstowej Telegrama (max 4096 znaków). Celuj w MAX 3500 znaków. Jeśli materiału jest "
+    "dużo — wybierz najważniejsze fakty zamiast wymieniać wszystko, zachowaj nagłówek i "
+    "stopkę.\n\n"
     "Zawsze kończ dokładnie tą stopką, w osobnej linii, nic po niej:\n"
     "<b>Alert konsumencki</b> | @alertkonsumencki"
 )

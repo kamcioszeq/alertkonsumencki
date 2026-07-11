@@ -10,8 +10,9 @@ _BACTERIA_PATTERNS = [
     (re.compile(r"\bclostridium\b", re.I), "Clostridium"),
     (re.compile(r"\bcampylobacter\b", re.I), "Campylobacter"),
     (re.compile(r"\bstaphylococcus\b", re.I), "Staphylococcus"),
-    (re.compile(r"bakter(?:i|ii|ie)\s", re.I), "bakterie"),
-    (re.compile(r"mikrobiologiczn", re.I), "skażenie mikrobiologiczne"),
+    # Uwaga: celowo BEZ ogólnikowych wzorców (np. "bakterii"/"mikrobiologiczne") — dopasowują
+    # niemal każdy alert bakteryjny, co dawało fałszywe "to już było w tym miesiącu" nawet
+    # dla zupełnie różnych patogenów. Tylko konkretny patogen liczy się jako powtórka.
 ]
 
 

@@ -173,7 +173,7 @@ def register_handlers(bot):
 
         text = event.text.strip()
         if text.startswith("!"):
-            post["text"] = text[1:].strip()
+            post["text"] = fit_telegram_text(text[1:].strip())
             await event.reply("Tekst zaktualizowany.")
         else:
             await event.reply("Przerabiam...")

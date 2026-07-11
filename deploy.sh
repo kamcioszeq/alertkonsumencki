@@ -174,8 +174,8 @@ deploy() {
 rebuild() {
     local trigger="${1:-manual}"
     stop_logs
-    log "Rebuilding image (no cache) + recreating..."
-    if ! $COMPOSE build --no-cache; then
+    log "Rebuilding image (cache warstw Dockera zostaje — tylko zmieniony kod się przebudowuje) + recreating..."
+    if ! $COMPOSE build; then
         error "Rebuild failed."
         record_status "rebuild" "$trigger" "failed"
         start_logs
