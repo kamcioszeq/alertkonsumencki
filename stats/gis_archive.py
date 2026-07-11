@@ -8,6 +8,7 @@ początek okresu, zamiast zawsze ściągać wszystkie ~33 strony.
 Każde ostrzeżenie, którego treść już raz pobraliśmy, ląduje jako plik .json w
 gis_alerts/archive/ — kolejne wywołania /stats dociągają tylko to, czego tam jeszcze nie ma.
 """
+import hashlib
 import json
 import os
 import re
@@ -32,8 +33,13 @@ def _period_start(period: str) -> date:
 
 
 def _cache_path(w: Warning) -> str:
+    """Nazwa pliku cache dla jednego ostrzeżenia. Slug (z tytułu) ucinamy do 80
+    znaków dla czytelności, ale dwa różne ostrzeżenia z tego samego dnia mogą mieć
+    identyczny obcięty slug (np. warianty "200 g"/"100 g" tego samego produktu) —
+    stąd dopisany krótki hash pełnego URL-a, żeby nazwy plików nigdy się nie zderzyły."""
     slug = re.sub(r"[^a-z0-9-]+", "-", w.slug.lower())[:80].strip("-")
-    return os.path.join(ARCHIVE_DIR, f"{w.date.isoformat()}_{slug}.json")
+    url_hash = hashlib.sha1(w.url.encode()).hexdigest()[:8]
+    return os.path.join(ARCHIVE_DIR, f"{w.date.isoformat()}_{slug}-{url_hash}.json")
 
 
 async def _fetch_page(client: httpx.AsyncClient, page: int) -> list[Warning]:
@@ -44,7 +50,14 @@ async def _fetch_page(client: httpx.AsyncClient, page: int) -> list[Warning]:
 
 
 async def _warnings_since(min_date: date) -> list[Warning]:
-    """Idzie stronami listingu (najnowsze first) aż wpisy spadną poniżej min_date."""
+    """Idzie stronami listingu (najnowsze first) aż CAŁA strona spadnie poniżej min_date.
+
+    Listing GIS nie zawsze jest ściśle malejący chronologicznie — zdarzają się
+    pojedyncze błędnie wpisane daty (np. literówka roku na stronie rządowej),
+    które potrafią wypaść między dwoma nowszymi wpisami. Zatrzymywanie się na
+    PIERWSZYM wpisie poniżej progu ucinało wtedy resztę prawdziwie nowszych
+    wpisów za tą anomalią — dlatego próg sprawdzamy dopiero po przetworzeniu
+    całej strony."""
     out: list[Warning] = []
     seen_urls: set[str] = set()
     async with httpx.AsyncClient(follow_redirects=True, timeout=30, headers=FETCH_HEADERS) as client:
@@ -54,14 +67,11 @@ async def _warnings_since(min_date: date) -> list[Warning]:
             new_on_page = [w for w in warnings if w.url not in seen_urls]
             if not new_on_page:
                 break  # strona pusta albo witryna zaczęła powtarzać ostatnią (koniec listy)
-            reached_end = False
             for w in new_on_page:
                 seen_urls.add(w.url)
-                if w.date < min_date:
-                    reached_end = True
-                    break
-                out.append(w)
-            if reached_end:
+                if w.date >= min_date:
+                    out.append(w)
+            if all(w.date < min_date for w in new_on_page):
                 break
             page += 1
     return out

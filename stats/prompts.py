@@ -165,49 +165,32 @@ def strip_footer(text: str) -> str:
 _ONLY_POST = " Zwróć wyłącznie gotowy post — bez komentarza i bez opisu, co robisz."
 
 STATS_ADJUST_LABELS = {
-    "formal": "Bardziej formalny",
-    "informal": "Mniej formalny",
-    "plain": "Plain (bez ikon)",
-    "angel": "😇 Anioł (bez firm)",
+    "spicy": "🌶️ Ostro",
+    "mild": "🕊️ Łagodniej",
+    "retry": "🔁 Retry",
+    "grammar": "✍️ Gramatyka",
 }
 
 STATS_ADJUST_INSTRUCTIONS = {
-    "formal": (
-        "Przeredaguj powyższe podsumowanie statystyczne bardziej formalnie i oficjalnie — "
-        "ton rzeczowy, bez poufałości i bez clickbaitu. Zachowaj wszystkie liczby/fakty "
-        "i stopkę." + _ONLY_POST
+    "spicy": (
+        "Przeredaguj powyższe podsumowanie na OSTRZEJSZĄ, bardziej prowokacyjną wersję — "
+        "mocniejszy hook, więcej pazura, śmielsze sformułowania. Nadal WYŁĄCZNIE na podstawie "
+        "podanych faktów — nie zmyślaj i nie przesadzaj z sensacją kosztem prawdy. Zachowaj "
+        "wszystkie liczby/fakty i stopkę." + _ONLY_POST
     ),
-    "informal": (
-        "Przeredaguj powyższe podsumowanie mniej formalnie — luźniej, bardziej przystępnie, "
-        "jakbyś pisał do znajomych. Zachowaj wszystkie liczby/fakty i stopkę." + _ONLY_POST
+    "mild": (
+        "Przeredaguj powyższe podsumowanie na ŁAGODNIEJSZĄ, spokojniejszą wersję — mniej "
+        "alarmistyczny ton, delikatniejsze sformułowania, bez wykrzykników i mocnych słów. "
+        "Zachowaj wszystkie liczby/fakty i stopkę." + _ONLY_POST
     ),
-    "plain": (
-        "Przeredaguj powyższe podsumowanie na wersję PLAIN: usuń WSZYSTKIE emoji/ikony "
-        "(także z ewentualnej stopki) i wszelkie marketingowe zabiegi (hooki, clickbait, "
-        "wykrzykniki) — zostaw suchą, rzeczową listę faktów/liczb w prostej formie. "
-        "Zachowaj wszystkie liczby i fakty oraz stopkę (samą treść stopki, bez emoji)."
-        + _ONLY_POST
+    "retry": (
+        "Napisz powyższe podsumowanie jeszcze raz w NOWEJ wersji — inne sformułowania, inny "
+        "hook, ten sam sens i wszystkie fakty. Zachowaj stopkę." + _ONLY_POST
     ),
-    "angel": (
-        "Przeredaguj powyższe podsumowanie tak, aby NIE wskazywać żadnych konkretnych nazw "
-        "firm/marek/producentów — zastąp je ogólnymi określeniami (np. 'jeden z producentów', "
-        "'popularna marka z tej kategorii'). Zachowaj wszystkie liczby i fakty dotyczące "
-        "samych zagrożeń — usuń wyłącznie identyfikację konkretnych podmiotów. Zachowaj "
-        "stopkę." + _ONLY_POST
+    "grammar": (
+        "Popraw w powyższym podsumowaniu WYŁĄCZNIE błędy językowe: gramatyka, ortografia, "
+        "interpunkcja, odmiana, składnia i literówki w języku polskim. NIE zmieniaj treści, "
+        "faktów, kolejności, struktury, tonu ani długości. Zachowaj bez zmian: wszystkie tagi "
+        "<b>…</b>, emoji i stopkę." + _ONLY_POST
     ),
-}
-
-STATS_SHORTEN_LABELS = {
-    "stats_short_20": "SKRÓĆ 20%",
-    "stats_short_30": "SKRÓĆ 30%",
-    "stats_short_50": "SKRÓĆ 50%",
-    "stats_short_70": "SKRÓĆ 70%",
-}
-
-STATS_SHORTEN_INSTRUCTIONS = {
-    key: (
-        f"Skróć powyższe podsumowanie o około {pct}% (usuń mniej więcej {pct}% objętości "
-        "tekstu). Zostaw najważniejsze liczby i fakty. Zachowaj stopkę." + _ONLY_POST
-    )
-    for key, pct in (("stats_short_20", 20), ("stats_short_30", 30), ("stats_short_50", 50), ("stats_short_70", 70))
 }

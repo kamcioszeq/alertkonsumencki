@@ -81,25 +81,10 @@ def make_stats_adjust_buttons():
     zmień styl przed udostępnieniem."""
     return [
         [Button.inline("📤 Share → TG", b"stats_share:tg"), Button.inline("📘 Share → FB", b"stats_share:fb")],
-        [Button.inline("Bardziej formalny", b"stats_adjust:formal"),
-         Button.inline("Mniej formalny", b"stats_adjust:informal")],
-        [Button.inline("Plain (bez ikon)", b"stats_adjust:plain"),
-         Button.inline("😇 Anioł (bez firm)", b"stats_adjust:angel")],
-        [Button.inline("Skróć", b"stats_shorten_menu"), Button.inline("✏️ Edytuj", b"stats_edit")],
-        [Button.inline("Odrzuć", b"stats_reject")],
-    ]
-
-
-def make_stats_shorten_buttons():
-    """Stats — shorten submenu."""
-    return [
-        [
-            Button.inline("20%", b"stats_short_20"),
-            Button.inline("30%", b"stats_short_30"),
-            Button.inline("50%", b"stats_short_50"),
-            Button.inline("70%", b"stats_short_70"),
-        ],
-        [Button.inline("← Wróć", b"stats_shorten_back")],
+        [Button.inline("🌶️ Ostro", b"stats_adjust:spicy"), Button.inline("🕊️ Łagodniej", b"stats_adjust:mild")],
+        [Button.inline("🔁 Retry", b"stats_adjust:retry"), Button.inline("✍️ Gramatyka", b"stats_adjust:grammar")],
+        [Button.inline("💬 Odpowiedz", b"stats_edit")],
+        [Button.inline("↩️ Cofnij", b"stats_undo"), Button.inline("Odrzuć", b"stats_reject")],
     ]
 
 

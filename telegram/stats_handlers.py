@@ -4,14 +4,16 @@ udostępnij (TG ze stopką / FB bez stopki, z automatycznym PROMO w komentarzu).
 Posty statystyczne żyją w pending_posts pod własnym platform="stats_post" — CELOWO
 odizolowane od platform="url_article"/"fb_draft", bo generyczny flow FB (facebook/handlers.py
 fb_start) narzuca sztywną strukturę alertu (HOOK/GIS/ZAGROŻENIE/CTA), zupełnie nietrafioną
-dla podsumowania statystycznego. Dlatego /stats ma własne przyciski stylu (formalny/
-nieformalny/plain/anioł/skróć) i własne udostępnianie zamiast reużywania tamtego flow.
+dla podsumowania statystycznego. Dlatego /stats ma własne przyciski stylu (Ostro/Łagodniej/
+Retry/Gramatyka) i własne udostępnianie zamiast reużywania tamtego flow.
 
 PROMO po publikacji na FB działa "za darmo": facebook/handlers.py -> fb_promo tylko
 sprawdza obecność post["fb_post_id"] w pending_posts, bez patrzenia na platform.
 
-Reply na wygenerowany post (dowolny tekst = instrukcja przeróbki, "!" = dosłowna podmiana)
-pozwala zasugerować drobną zmianę bez regenerowania całości od danych źródłowych.
+Odpowiedz na wygenerowany post (dowolny tekst = instrukcja przeróbki, "!" = dosłowna
+podmiana) pozwala zasugerować drobną zmianę bez regenerowania całości od danych źródłowych.
+Każda przeróbka (przycisk stylu lub Odpowiedz) odkłada poprzednią wersję na stos historii —
+Cofnij przywraca ją.
 """
 import html
 
@@ -24,23 +26,17 @@ from core.state import pending_posts, track_post
 from facebook.buttons import make_fb_published_buttons
 from facebook.publish import html_to_plain, publish_to_facebook
 from . import config
-from .buttons import (
-    make_stats_period_buttons, make_stats_type_buttons, make_stats_adjust_buttons,
-    make_stats_shorten_buttons,
-)
+from .buttons import make_stats_period_buttons, make_stats_type_buttons, make_stats_adjust_buttons
 from .format import fit_telegram_text
 from .publish import send_preview, publish_to_channel, show_loading, notify_reviewers
 from stats.gis_archive import fetch_period
 from stats.prompts import (
     STATS_MODEL, STATS_SYSTEM_PROMPT, STATS_TYPE_LABELS, STATS_ADJUST_LABELS,
-    STATS_ADJUST_INSTRUCTIONS, STATS_SHORTEN_LABELS, STATS_SHORTEN_INSTRUCTIONS,
-    build_stats_blob, period_label, instruction_for, strip_title_prefix, strip_footer,
+    STATS_ADJUST_INSTRUCTIONS, build_stats_blob, period_label, instruction_for,
+    strip_title_prefix, strip_footer,
 )
 
 PERIOD_LABELS = {"month": "Miesiąc", "year": "Rok"}
-
-_STYLE_INSTRUCTIONS = {**STATS_ADJUST_INSTRUCTIONS, **STATS_SHORTEN_INSTRUCTIONS}
-_STYLE_LABELS = {**STATS_ADJUST_LABELS, **STATS_SHORTEN_LABELS}
 
 
 def _chunk_lines(lines, max_chars=3500):
@@ -61,11 +57,20 @@ def _chain_context(post):
     chain = post.get("edit_chain", [])
     if not chain:
         return ""
-    applied = [STATS_TYPE_LABELS.get(chain[0], chain[0])] + [_STYLE_LABELS.get(s, s) for s in chain[1:]]
+    applied = [STATS_TYPE_LABELS.get(chain[0], chain[0])] + [STATS_ADJUST_LABELS.get(s, s) for s in chain[1:]]
     return (
         f"WAŻNE: Dotychczas zastosowane style: {', '.join(applied)}. "
         "ZACHOWAJ charakter poprzednich edycji, tylko zastosuj nowe polecenie.\n\n"
     )
+
+
+def _snapshot(post):
+    """Zrzut aktualnej wersji na stos historii — do przywrócenia przez Cofnij."""
+    post.setdefault("history", []).append({
+        "text": post["text"],
+        "image": post.get("image"),
+        "edit_chain": list(post.get("edit_chain", [])),
+    })
 
 
 async def _regen_and_resend(bot, post, msg_id, instruction, *, chain_key=None):
@@ -79,6 +84,7 @@ async def _regen_and_resend(bot, post, msg_id, instruction, *, chain_key=None):
     rewritten, banner = apply_banner_from_llm(rewritten_raw, fallback=post.get("image"))
     rewritten = fit_telegram_text(rewritten)
 
+    _snapshot(post)
     post["text"] = rewritten
     post["image"] = banner
     if chain_key:
@@ -186,6 +192,7 @@ def register_stats_handlers(bot):
                 "title": f"{STATS_TYPE_LABELS[stat_type]} — {label}",
                 "image": banner,
                 "edit_chain": [f"stats_{stat_type}"],
+                "history": [],
             }
             sent = await send_preview(bot, draft, make_stats_adjust_buttons())
             pending_posts[sent.id] = track_post(pending_posts, post, sent_id=sent.id)
@@ -211,38 +218,42 @@ def register_stats_handlers(bot):
             return
 
         if data == "stats_edit":
-            await event.answer("Edycja...")
+            await event.answer("Odpowiedz na wiadomość...")
             await bot.send_message(
                 config.INTERNAL_CHAT_ID,
-                "Odpowiedz na tę wiadomość nowym tekstem. Zacznij od ! aby podmienić "
-                "dosłownie, albo napisz instrukcję do przerobienia:",
+                "Odpowiedz na tę wiadomość — napisz co zmienić w statystykach, a prompt "
+                "się dostosuje. Zacznij od ! aby podmienić tekst dosłownie:",
                 reply_to=msg_id,
             )
             return
 
-        if data == "stats_shorten_menu":
-            await event.answer("O ile skrócić?")
-            await (await event.get_message()).edit(buttons=make_stats_shorten_buttons())
+        if data == "stats_undo":
+            history = post.get("history") or []
+            if not history:
+                await event.answer("Brak wcześniejszej wersji do cofnięcia", alert=True)
+                return
+            prev = history.pop()
+            post["text"] = prev["text"]
+            post["image"] = prev["image"]
+            post["edit_chain"] = prev["edit_chain"]
+            sent = await send_preview(bot, post["text"], make_stats_adjust_buttons())
+            pending_posts.pop(msg_id, None)
+            pending_posts[sent.id] = track_post(pending_posts, post, sent_id=sent.id)
+            try:
+                await event.delete()
+            except Exception:
+                pass
+            await event.answer("Cofnięto")
             return
 
-        if data == "stats_shorten_back":
-            await event.answer("Powrót")
-            await (await event.get_message()).edit(buttons=make_stats_adjust_buttons())
-            return
-
-        key = None
         if data.startswith("stats_adjust:"):
             key = data.split(":", 1)[1]
-        elif data in STATS_SHORTEN_INSTRUCTIONS:
-            key = data
-
-        if key is not None:
-            style_label = _STYLE_LABELS[key]
+            style_label = STATS_ADJUST_LABELS[key]
             await event.answer(f"Przerabiam ({style_label})...")
             await show_loading(event, f"{style_label}...")
             print(f"[STATS][{style_label}] Przerabiam post...")
 
-            instruction = _chain_context(post) + _STYLE_INSTRUCTIONS[key]
+            instruction = _chain_context(post) + STATS_ADJUST_INSTRUCTIONS[key]
             ok, result = await _regen_and_resend(bot, post, msg_id, instruction, chain_key=key)
             if not ok:
                 await event.answer("Błąd modelu. Spróbuj ponownie później.", alert=True)
@@ -314,7 +325,8 @@ def register_stats_handlers(bot):
 
         text = event.text.strip()
         if text.startswith("!"):
-            post["text"] = text[1:].strip()
+            _snapshot(post)
+            post["text"] = fit_telegram_text(text[1:].strip())
             sent = await send_preview(bot, post["text"], make_stats_adjust_buttons())
             pending_posts.pop(original_msg_id, None)
             pending_posts[sent.id] = track_post(pending_posts, post, sent_id=sent.id)
