@@ -1,5 +1,5 @@
-"""Pętla serwisu: start → zawsze zrzuć najnowsze ostrzeżenie (test), potem w interwale
-sprawdzaj nowe, pobieraj szczegóły i zapisuj do katalogu jako .txt. Dużo logów."""
+"""Pętla serwisu: w interwale sprawdza nowe ostrzeżenia GIS, pobiera szczegóły
+i zapisuje do katalogu jako .txt. Dużo logów."""
 import asyncio
 import logging
 import os
@@ -76,8 +76,8 @@ def _new_since(warnings: list[Warning], st: dict) -> list[Warning]:
     return new
 
 
-async def run(force_latest: bool) -> None:
-    """Jeden przebieg. force_latest=True (start) zawsze zrzuca najnowsze ostrzeżenie."""
+async def run() -> None:
+    """Jeden przebieg: sprawdź nowe ostrzeżenia względem zapisanego stanu, przetwórz."""
     st = crawler_state.load()
     warnings = await fetch_listing()
     if not warnings:
@@ -89,18 +89,12 @@ async def run(force_latest: bool) -> None:
              len(warnings), latest.title, latest.date_str)
 
     new = list(reversed(_new_since(warnings, st)))  # od najstarszego z nowych
-    # Nowe ostrzeżenia → do Telegrama. force_latest (start) dodatkowo zawsze zrzuca
-    # najnowsze do .txt jako health-check, ale BEZ powiadamiania Telegrama.
     if new:
         log.info("Nowe ostrzeżenia do przetworzenia: %d.", len(new))
         for w in new:
             await _process(w, notify=True)
     else:
         log.info("Brak nowych ostrzeżeń (ostatnie widziane: %s).", st.get("last_title", "—"))
-
-    if force_latest and latest not in new:
-        log.info("Start serwisu: wysyłam najnowsze ostrzeżenie do Telegrama (dowód działania).")
-        await _process(latest, notify=True)
 
     crawler_state.save(latest)
     log.info("Zaktualizowano stan (ostatnie: %s).", latest.date_str)
@@ -116,7 +110,7 @@ async def main() -> None:
              config.CRAWLER_INTERVAL, config.CRAWLER_OUTPUT_DIR, config.GIS_LISTING_URL)
 
     try:
-        await run(force_latest=True)  # start: zawsze wyślij najnowsze do Telegrama (dowód działania)
+        await run()
     except Exception as e:
         log.exception("Błąd startowego przebiegu: %s", e)
 
@@ -124,6 +118,6 @@ async def main() -> None:
         log.info("Następne sprawdzenie za %ds…", config.CRAWLER_INTERVAL)
         await asyncio.sleep(config.CRAWLER_INTERVAL)
         try:
-            await run(force_latest=False)
+            await run()
         except Exception as e:
             log.exception("Błąd podczas sprawdzania: %s", e)
