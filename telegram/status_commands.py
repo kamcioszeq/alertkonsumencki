@@ -18,6 +18,8 @@ HELP_TEXT = (
     "• <code>/test</code> — wygeneruj przykładowy alert testowy\n\n"
     "<b>Statystyki</b>\n"
     "• <code>/stats</code> — podsumowania GIS (miesiąc/rok → rodzaj → post)\n\n"
+    "<b>Promocja</b>\n"
+    "• <code>/promocja</code> — angażujący post na FB (pytanie + tekst do skopiowania)\n\n"
     "<b>Deploy</b>\n"
     "• <code>/redeploy</code> — git pull + build + restart\n"
     "• <code>/restart</code>, <code>/rebuild</code> — to samo (pełny rebuild)\n"
