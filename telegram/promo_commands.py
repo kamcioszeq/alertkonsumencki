@@ -12,7 +12,7 @@ from promo.prompts import (
 from stats.gis_archive import fetch_period
 from stats.prompts import build_stats_blob, period_label, strip_title_prefix
 from . import config
-from .buttons import make_promo_buttons
+from .buttons import make_promo_buttons, make_promo_buttons_fallback
 from .publish import show_loading, notify_reviewers
 
 
@@ -73,11 +73,20 @@ async def _generate_promo(*, regen: bool = False) -> tuple[bool, str]:
 async def _send_promo_preview(bot, promo_text: str):
     """Wyślij podgląd z przyciskiem Kopiuj i zapisz w pending_posts."""
     preview = _format_preview(promo_text)
-    sent = await bot.send_message(
-        config.INTERNAL_CHAT_ID, preview,
-        buttons=make_promo_buttons(promo_text),
-        parse_mode="html",
-    )
+    try:
+        sent = await bot.send_message(
+            config.INTERNAL_CHAT_ID, preview,
+            buttons=make_promo_buttons(promo_text),
+            parse_mode="html",
+        )
+    except Exception as e:
+        print(f"[PROMO] Błąd wysyłki z przyciskiem Kopiuj ({type(e).__name__}: {e}) — fallback")
+        preview += "\n\n<i>Przycisk Kopiuj niedostępny — skopiuj tekst z bloku powyżej.</i>"
+        sent = await bot.send_message(
+            config.INTERNAL_CHAT_ID, preview,
+            buttons=make_promo_buttons_fallback(),
+            parse_mode="html",
+        )
     post = {
         "text": promo_text,
         "platform": "promo_post",
@@ -89,22 +98,34 @@ async def _send_promo_preview(bot, promo_text: str):
 
 
 def register_promo_commands(bot):
-    @bot.on(events.NewMessage(pattern=r"^/promocja$"))
+    @bot.on(events.NewMessage(pattern=r"^/promocja(?:@\w+)?$"))
     async def on_promocja(event):
         if event.sender_id not in config.REVIEWER_IDS:
             return
         if getattr(event, "chat_id", None) != config.INTERNAL_CHAT_ID:
             return
 
-        await event.reply("✨ Generuję krótki tekst promocyjny...")
+        status = await event.reply("✨ Generuję krótki tekst promocyjny...")
         ok, result = await _generate_promo()
         if not ok:
             await notify_reviewers(
                 bot, html.escape(f"⚠️ Błąd Claude przy /promocja: {result}"),
             )
-            await event.reply("Błąd generowania. Spróbuj ponownie później.")
+            await status.edit("Błąd generowania. Spróbuj ponownie później.")
             return
-        await _send_promo_preview(bot, result)
+        try:
+            await _send_promo_preview(bot, result)
+        except Exception as e:
+            print(f"[PROMO] Krytyczny błąd podglądu: {type(e).__name__}: {e}")
+            await notify_reviewers(
+                bot, html.escape(f"⚠️ Błąd /promocja przy wysyłce podglądu: {e}"),
+            )
+            await status.edit(f"Nie udało się wysłać podglądu: {e}")
+            return
+        try:
+            await status.delete()
+        except Exception:
+            pass
 
     @bot.on(events.CallbackQuery)
     async def on_promo_button(event):
@@ -128,12 +149,32 @@ def register_promo_commands(bot):
                 )
                 return
             preview = _format_preview(result)
-            await (await event.get_message()).edit(
-                preview,
-                buttons=make_promo_buttons(result),
-                parse_mode="html",
-            )
+            try:
+                await (await event.get_message()).edit(
+                    preview,
+                    buttons=make_promo_buttons(result),
+                    parse_mode="html",
+                )
+            except Exception as e:
+                print(f"[PROMO] Błąd edycji z Kopiuj ({type(e).__name__}: {e}) — fallback")
+                preview += "\n\n<i>Przycisk Kopiuj niedostępny — skopiuj tekst z bloku powyżej.</i>"
+                await (await event.get_message()).edit(
+                    preview,
+                    buttons=make_promo_buttons_fallback(),
+                    parse_mode="html",
+                )
             post["text"] = result
+            return
+
+        if data == "promo_copy":
+            post = pending_posts.get(msg_id)
+            if not post or post.get("platform") != "promo_post":
+                return
+            await event.answer("Tekst poniżej — przytrzymaj i skopiuj")
+            await bot.send_message(
+                config.INTERNAL_CHAT_ID,
+                f"📋 Skopiuj i wklej:\n\n{post['text']}",
+            )
             return
 
         if data == "promo_reject":
