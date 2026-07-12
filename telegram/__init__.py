@@ -1,4 +1,5 @@
 """Telegram platform package. `register(bot)` wires all handler groups."""
+from .debug_log import register_debug_log
 from .url_handlers import register_url_handlers
 from .handlers import register_handlers
 from .ingest import register_ingest
@@ -8,6 +9,7 @@ from .status_commands import register_status_commands
 
 
 def register(bot):
+    register_debug_log(bot)  # zawsze pierwszy — loguje KAŻDĄ wiadomość, nawet odrzuconą dalej
     register_url_handlers(bot)
     register_handlers(bot)
     from facebook.handlers import register_facebook_handlers
