@@ -1,13 +1,10 @@
-"""/promocja — generuje angażujący post promocyjny na FB (pytanie + tekst do skopiowania)."""
+"""/promocja — krótki tekst promocyjny z przyciskiem Kopiuj (wklejka na grupy FB)."""
 import html
-import os
 
 from telethon import events
 
-import config as root_config
 from core.claude import ask_claude
 from core.state import pending_posts, track_post
-from facebook.publish import publish_to_facebook
 from promo.prompts import (
     PROMO_MODEL, PROMO_SYSTEM_PROMPT,
     PROMO_WITH_STATS_INSTRUCTION, PROMO_GENERIC_INSTRUCTION, PROMO_REGEN_HINT,
@@ -15,18 +12,16 @@ from promo.prompts import (
 from stats.gis_archive import fetch_period
 from stats.prompts import build_stats_blob, period_label, strip_title_prefix
 from . import config
-from .buttons import make_promo_buttons, make_promo_published_buttons
+from .buttons import make_promo_buttons
 from .publish import show_loading, notify_reviewers
 
 
-def _format_preview(fb_text: str) -> str:
-    """Podgląd w Telegramie: gotowy tekst do skopiowania + krótka wskazówka."""
+def _format_preview(promo_text: str) -> str:
+    """Podgląd w Telegramie: krótki tekst + instrukcja kopiowania."""
     return (
-        "📣 <b>Post promocyjny na Facebooka</b>\n"
-        "Skopiuj tekst poniżej i wklej na FB 👇\n\n"
-        f"<pre>{html.escape(fb_text.strip())}</pre>\n\n"
-        "💡 <i>Wskazówka: dodaj grafikę QR (assets/qr.png) — lepszy zasięg. "
-        "Odpowiadaj na komentarze w pierwszej godzinie, żeby algorytm podbił post.</i>"
+        "📋 <b>Tekst promocyjny</b> (krótki, pod grupy)\n"
+        "Kliknij <b>📋 Kopiuj</b> i wklej gdzie chcesz 👇\n\n"
+        f"<pre>{html.escape(promo_text.strip())}</pre>"
     )
 
 
@@ -57,7 +52,7 @@ async def _build_source_blob() -> tuple[str, str]:
 
 
 async def _generate_promo(*, regen: bool = False) -> tuple[bool, str]:
-    """Generuj tekst posta promocyjnego. Zwraca (ok, text_or_error)."""
+    """Generuj tekst promocyjny. Zwraca (ok, text_or_error)."""
     summary, blob = await _build_source_blob()
     instruction = PROMO_WITH_STATS_INSTRUCTION if blob else PROMO_GENERIC_INSTRUCTION
     if regen:
@@ -75,22 +70,21 @@ async def _generate_promo(*, regen: bool = False) -> tuple[bool, str]:
     return True, raw.strip()
 
 
-async def _send_promo_preview(bot, fb_text: str, *, regen: bool = False):
-    """Wyślij podgląd i zapisz w pending_posts."""
-    preview = _format_preview(fb_text)
+async def _send_promo_preview(bot, promo_text: str):
+    """Wyślij podgląd z przyciskiem Kopiuj i zapisz w pending_posts."""
+    preview = _format_preview(promo_text)
     sent = await bot.send_message(
         config.INTERNAL_CHAT_ID, preview,
-        buttons=make_promo_buttons(),
+        buttons=make_promo_buttons(promo_text),
         parse_mode="html",
     )
     post = {
-        "text": fb_text,
+        "text": promo_text,
         "platform": "promo_post",
-        "image": root_config.PROMO_IMAGE,
         "source": "promocja",
     }
     pending_posts[sent.id] = track_post(pending_posts, post, sent_id=sent.id)
-    print(f"[PROMO] Wygenerowano post promocyjny → msg_id={sent.id} regen={regen}")
+    print(f"[PROMO] Wygenerowano tekst promocyjny → msg_id={sent.id}")
     return sent
 
 
@@ -102,7 +96,7 @@ def register_promo_commands(bot):
         if getattr(event, "chat_id", None) != config.INTERNAL_CHAT_ID:
             return
 
-        await event.reply("✨ Generuję post promocyjny na FB...")
+        await event.reply("✨ Generuję krótki tekst promocyjny...")
         ok, result = await _generate_promo()
         if not ok:
             await notify_reviewers(
@@ -124,8 +118,8 @@ def register_promo_commands(bot):
             post = pending_posts.get(msg_id)
             if not post or post.get("platform") != "promo_post":
                 return
-            await event.answer("Generuję inne pytanie...")
-            await show_loading(event, "Inne pytanie...")
+            await event.answer("Generuję inną wersję...")
+            await show_loading(event, "Inna wersja...")
             ok, result = await _generate_promo(regen=True)
             if not ok:
                 await event.answer("Błąd modelu", alert=True)
@@ -135,35 +129,11 @@ def register_promo_commands(bot):
                 return
             preview = _format_preview(result)
             await (await event.get_message()).edit(
-                preview, buttons=make_promo_buttons(), parse_mode="html",
-            )
-            post["text"] = result
-            return
-
-        if data == "promo_pub":
-            post = pending_posts.get(msg_id)
-            if not post or post.get("platform") != "promo_post":
-                return
-            await event.answer("Publikuję na FB...")
-            await show_loading(event, "Publikuję na FB...")
-            promo_img = post.get("image") if os.path.exists(post.get("image", "")) else None
-            ok, result = await publish_to_facebook(post["text"], image_path=promo_img)
-            original_msg = await event.get_message()
-            if not ok:
-                print(f"[PROMO] Błąd publikacji FB: {result}")
-                await event.answer(f"FB: {result}", alert=True)
-                try:
-                    await original_msg.edit(buttons=make_promo_buttons())
-                except Exception:
-                    pass
-                return
-            print(f"[PROMO] Opublikowano na FB: {result}")
-            post["fb_post_id"] = result
-            await original_msg.edit(
-                original_msg.text + "\n\n✅ OPUBLIKOWANO NA FB",
-                buttons=make_promo_published_buttons(),
+                preview,
+                buttons=make_promo_buttons(result),
                 parse_mode="html",
             )
+            post["text"] = result
             return
 
         if data == "promo_reject":

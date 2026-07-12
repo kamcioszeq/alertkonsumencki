@@ -1,5 +1,6 @@
 """Inline button layouts for the Telegram review flow (text-only)."""
 from telethon import Button
+from telethon.tl.types import KeyboardButtonCopy
 
 
 def make_generate_button():
@@ -105,20 +106,11 @@ def make_stats_shared_buttons(*, tg_done: bool, fb_done: bool):
     return rows or None
 
 
-def make_promo_buttons():
-    """Post promocyjny /promocja — regeneruj, publikuj lub odrzuć."""
+def make_promo_buttons(copy_text: str):
+    """Tekst promocyjny /promocja — kopiuj do schowka, regeneruj lub odrzuć."""
     return [
-        [Button.inline("📤 Publikuj na FB", b"promo_pub")],
-        [Button.inline("🔄 Inne pytanie", b"promo_regen")],
-        [Button.inline("Odrzuć", b"promo_reject")],
-    ]
-
-
-def make_promo_published_buttons():
-    """Po publikacji posta promocyjnego na FB."""
-    return [
-        [Button.inline("🔄 Inne pytanie", b"promo_regen")],
-        [Button.inline("↩️ Główne menu", b"phase1_menu")],
+        [KeyboardButtonCopy(text="📋 Kopiuj", copy_text=copy_text)],
+        [Button.inline("🔄 Inne", b"promo_regen"), Button.inline("Odrzuć", b"promo_reject")],
     ]
 
 
