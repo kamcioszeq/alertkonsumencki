@@ -105,6 +105,23 @@ def make_stats_shared_buttons(*, tg_done: bool, fb_done: bool):
     return rows or None
 
 
+def make_promo_buttons():
+    """Post promocyjny /promocja — regeneruj, publikuj lub odrzuć."""
+    return [
+        [Button.inline("📤 Publikuj na FB", b"promo_pub")],
+        [Button.inline("🔄 Inne pytanie", b"promo_regen")],
+        [Button.inline("Odrzuć", b"promo_reject")],
+    ]
+
+
+def make_promo_published_buttons():
+    """Po publikacji posta promocyjnego na FB."""
+    return [
+        [Button.inline("🔄 Inne pytanie", b"promo_regen")],
+        [Button.inline("↩️ Główne menu", b"phase1_menu")],
+    ]
+
+
 def make_shorten_buttons():
     """Shorten submenu — reduce the draft by a chosen percentage."""
     return [
