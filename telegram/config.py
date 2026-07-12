@@ -33,3 +33,7 @@ def _chat(raw):
 
 
 BROADCAST_CHANNEL_ID = _chat(os.getenv("BROADCAST_CHANNEL_ID"))
+
+# Deploy-webhook (osobny kontener na hoście — patrz ~/Documents/deploy-webhook).
+DEPLOY_WEBHOOK_URL = os.getenv("DEPLOY_WEBHOOK_URL", "http://deploy_webhook:8099")
+DEPLOY_WEBHOOK_TOKEN = os.getenv("DEPLOY_WEBHOOK_TOKEN", "")

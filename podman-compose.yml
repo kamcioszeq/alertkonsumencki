@@ -21,6 +21,9 @@ services:
     volumes:
       - ./session:/app/session
       - ./queue:/app/queue   # handoff od crawlera
+    networks:
+      - default
+      - deploy_net   # do wołania deploy-webhook (/redeploy, /restart, /rebuild)
     restart: unless-stopped
 
   # Mini-serwis: cyklicznie sprawdza ostrzeżenia GIS. Współdzieli obraz z botem,
@@ -41,4 +44,13 @@ services:
     volumes:
       - ./gis_alerts:/app/gis_alerts
       - ./queue:/app/queue   # handoff do bota
+    networks:
+      - default
     restart: unless-stopped
+
+networks:
+  default: {}
+  # Współdzielona z deploy-webhook (~/Documents/deploy-webhook) — musi istnieć
+  # PRZED odpaleniem: podman network create deploy_net
+  deploy_net:
+    external: true
