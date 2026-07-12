@@ -1,6 +1,11 @@
 """Inline button layouts for the Telegram review flow (text-only)."""
 from telethon import Button
-from telethon.tl.types import KeyboardButtonCopy
+from telethon.tl.types import (
+    KeyboardButtonCallback,
+    KeyboardButtonCopy,
+    KeyboardButtonRow,
+    ReplyInlineMarkup,
+)
 
 
 def make_generate_button():
@@ -107,9 +112,24 @@ def make_stats_shared_buttons(*, tg_done: bool, fb_done: bool):
 
 
 def make_promo_buttons(copy_text: str):
-    """Tekst promocyjny /promocja — kopiuj do schowka, regeneruj lub odrzuć."""
+    """Tekst promocyjny /promocja — kopiuj do schowka, regeneruj lub odrzuć.
+
+    Telethon 1.37 nie rozpoznaje KeyboardButtonCopy jako inline w build_reply_markup
+    (Button._is_inline) — stąd jawny ReplyInlineMarkup zamiast zwykłej listy przycisków.
+    """
+    return ReplyInlineMarkup([
+        KeyboardButtonRow([KeyboardButtonCopy(text="📋 Kopiuj", copy_text=copy_text)]),
+        KeyboardButtonRow([
+            KeyboardButtonCallback("🔄 Inne", b"promo_regen"),
+            KeyboardButtonCallback("Odrzuć", b"promo_reject"),
+        ]),
+    ])
+
+
+def make_promo_buttons_fallback():
+    """Fallback bez KeyboardButtonCopy — wyślij tekst osobną wiadomością."""
     return [
-        [KeyboardButtonCopy(text="📋 Kopiuj", copy_text=copy_text)],
+        [Button.inline("📋 Kopiuj (wyślij tekst)", b"promo_copy")],
         [Button.inline("🔄 Inne", b"promo_regen"), Button.inline("Odrzuć", b"promo_reject")],
     ]
 
