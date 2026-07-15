@@ -103,6 +103,8 @@ FB_COMMENT_GENERATE_INSTRUCTION = (
 
 # Statyczny post PROMO publikowany po opublikowaniu alertu (z obrazkiem QR).
 FB_PROMO_TEXT = (
+    "📣 Obserwuj nas na Facebooku! 🔔 Powiadomienia zawsze pod ręką\n"
+    "\n"
     "📣 Dołącz do społeczności Alert konsumencki! Powiadomienia w ulubionej aplikacji\n"
     "\n"
     "💬 WhatsApp (społeczność):\n"

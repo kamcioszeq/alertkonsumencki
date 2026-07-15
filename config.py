@@ -23,7 +23,7 @@ CRAWLER_STATE_FILE = os.getenv("CRAWLER_STATE_FILE", "crawler_state.json")  # os
 QUEUE_DIR = os.getenv("QUEUE_DIR", "queue")
 QUEUE_POLL_INTERVAL = int(os.getenv("QUEUE_POLL_INTERVAL", "15"))   # jak często bot sprawdza kolejkę (s)
 # Statyczny obrazek dołączany do ostrzeżeń i publikowanych postów.
-ALERT_IMAGE = os.getenv("ALERT_IMAGE", "assets/alert.png")
+ALERT_IMAGE = os.getenv("ALERT_IMAGE", "assets/nowe/sprawdzczymaszwdomu.png")
 # Obrazek (QR) dołączany do posta PROMO zapraszającego do społeczności.
 PROMO_IMAGE = os.getenv("PROMO_IMAGE", "assets/qr.png")
 
