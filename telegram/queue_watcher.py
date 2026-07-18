@@ -18,6 +18,11 @@ async def watch_queue(bot):
                     url=item.get("url", ""),
                     text=item.get("text", ""),
                     date_str=item.get("date", ""),
+                    source=item.get("source", "GIS"),
+                    kind=item.get("kind", ""),
+                    kapielisko_id=item.get("kapielisko_id", ""),
+                    fb_post_id=item.get("fb_post_id", ""),
+                    lokalizacja=item.get("lokalizacja", ""),
                 )
                 handoff.remove(path)
                 print(f"[QUEUE] Odebrano ostrzeżenie: {item.get('title', '')[:60]}")

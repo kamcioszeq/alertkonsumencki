@@ -7,6 +7,8 @@ from .deploy_commands import register_deploy_commands
 from .stats_handlers import register_stats_handlers
 from .status_commands import register_status_commands
 from .promo_commands import register_promo_commands
+from .kapieliska_commands import register_kapieliska_commands
+from .kapieliska_handlers import register_kapieliska_handlers
 
 
 def register(bot):
@@ -20,3 +22,5 @@ def register(bot):
     register_stats_handlers(bot)
     register_status_commands(bot)
     register_promo_commands(bot)
+    register_kapieliska_commands(bot)
+    register_kapieliska_handlers(bot)

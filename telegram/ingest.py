@@ -12,7 +12,7 @@ from . import config
 from .buttons import make_generate_button
 from .publish import send_alert_photo
 from core.article import has_url, apply_url_fields
-from core.state import pending_adoption, track_post
+from core.state import pending_adoption, pending_posts, track_post
 
 SAMPLE_ALERT = (
     "GIS: Wycofanie partii sera pleśniowego \"Przykładowy Ser\" 200 g z powodu wykrycia "
@@ -31,13 +31,63 @@ def _phase1_message(post: dict) -> str:
     return "🆕 Nowy alert (tekst). Kliknij, aby wygenerować post."
 
 
-async def ingest_warning(bot, *, title: str, url: str, text: str, date_str: str = ""):
-    """Handoff from the GIS crawler: DM the alert image + summary + 🔍 Generuj button.
+async def ingest_warning(
+    bot, *, title: str, url: str, text: str, date_str: str = "", source: str = "GIS",
+    kind: str = "", kapielisko_id: str = "", fb_post_id: str = "", lokalizacja: str = "",
+    **_extra,
+):
+    """Handoff from a crawler: DM the alert image + summary + 🔍 Generuj button.
 
     The crawler already fetched the article text, so it's stored as original_text and the
     draft is generated from it directly (no re-fetch)."""
+    src = (source or "GIS").strip() or "GIS"
+
+    # Zmiana statusu kąpieliska (aktywny alert 30 dni) → osobny flow z update komentarza FB
+    if src.upper() in ("KĄPIELISKA_STATUS", "KAPIELISKA_STATUS") or kind == "status_change":
+        return await ingest_kapieliska_status(
+            bot,
+            title=title,
+            url=url,
+            text=text,
+            date_str=date_str,
+            kapielisko_id=kapielisko_id,
+            fb_post_id=fb_post_id,
+            lokalizacja=lokalizacja,
+        )
+
+    if src.upper() in ("KĄPIELISKA", "KAPIELISKA") or kind == "threat":
+        loc = html.escape(lokalizacja) if lokalizacja else ""
+        label = "Nowe: kąpielisko — zagrożenie (jakość wody)"
+        caption = (
+            f"🆕 <b>{label}</b>\n"
+            f"<b>{html.escape(title)}</b>\n"
+            + (f"📍 {loc}\n" if loc else "")
+            + (f"📅 {html.escape(date_str)}\n" if date_str else "")
+            + (f"🔗 {html.escape(url)}\n" if url else "")
+            + "\nWygenerować post FB? (tylko przy zagrożeniu)"
+        )
+        sent = await send_alert_photo(
+            bot, caption, make_generate_button(), image=root_config.KAPIELISKA_IMAGE,
+        )
+        post = {
+            "original_text": text,
+            "source": "KĄPIELISKA",
+            "has_url": False,
+            "article_url": url if url else "",
+            "user_instruction": "",
+            "title": title,
+            "image": root_config.KAPIELISKA_IMAGE,
+            "kind": "kapieliska",
+            "kapielisko_id": kapielisko_id,
+            "lokalizacja": lokalizacja,
+        }
+        pending_adoption[sent.id] = track_post(pending_adoption, post, sent_id=sent.id)
+        print(f"[QUEUE_INGEST][KĄPIELISKA] {title[:60]}")
+        return sent
+
+    label = f"Nowe ostrzeżenie {html.escape(src)}"
     caption = (
-        "🆕 <b>Nowe ostrzeżenie GIS</b>\n"
+        f"🆕 <b>{label}</b>\n"
         f"<b>{html.escape(title)}</b>\n"
         + (f"📅 {html.escape(date_str)}\n" if date_str else "")
         + (f"🔗 {html.escape(url)}\n" if url else "")
@@ -46,15 +96,55 @@ async def ingest_warning(bot, *, title: str, url: str, text: str, date_str: str 
     sent = await send_alert_photo(bot, caption, make_generate_button())
     post = {
         "original_text": text,
-        "source": url or "GIS",
+        "source": url or src,
         "has_url": False,
-        "article_url": "",  # tekst mamy z crawlera — url_read użyje original_text
+        "article_url": url if url else "",
         "user_instruction": "",
         "title": title,
         "image": root_config.ALERT_IMAGE,
     }
     pending_adoption[sent.id] = track_post(pending_adoption, post, sent_id=sent.id)
     print(f"[QUEUE_INGEST] {title[:60]}")
+    return sent
+
+
+async def ingest_kapieliska_status(
+    bot, *, title: str, url: str, text: str, date_str: str = "",
+    kapielisko_id: str = "", fb_post_id: str = "", lokalizacja: str = "",
+):
+    """TG: status kąpieliska się zmienił — czy wrzucić update do komentarza FB?"""
+    from telethon import Button
+
+    loc = html.escape(lokalizacja) if lokalizacja else ""
+    caption = (
+        "🔄 <b>Zmiana statusu kąpieliska</b>\n"
+        f"<b>{html.escape(title)}</b>\n"
+        + (f"📍 {loc}\n" if loc else "")
+        + (f"📅 {html.escape(date_str)}\n" if date_str else "")
+        + (f"🔗 {html.escape(url)}\n" if url else "")
+        + "\nStatus się zmienił. Wrzucić update do komentarza pod postem FB?"
+    )
+    buttons = [
+        [Button.inline("✅ Update komentarz FB", b"kap_status_comment")],
+        [Button.inline("⏭ Pomiń", b"kap_status_skip")],
+    ]
+    sent = await bot.send_message(
+        config.INTERNAL_CHAT_ID, caption, buttons=buttons, parse_mode="html",
+        link_preview=False,
+    )
+    post = {
+        "original_text": text,
+        "source": "KĄPIELISKA_STATUS",
+        "kind": "status_change",
+        "kapielisko_id": kapielisko_id,
+        "fb_post_id": fb_post_id,
+        "lokalizacja": lokalizacja,
+        "title": title,
+        "article_url": url,
+        "platform": "kapieliska_status",
+    }
+    pending_posts[sent.id] = track_post(pending_posts, post, sent_id=sent.id)
+    print(f"[QUEUE_INGEST][STATUS] {title[:60]}")
     return sent
 
 

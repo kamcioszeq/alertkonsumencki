@@ -41,10 +41,10 @@ async def send_preview(bot, text, buttons, *, formatting_entities=None, reply_to
     )
 
 
-async def send_alert_photo(bot, caption, buttons, *, reply_to=None):
-    """Send the static alert image + caption + buttons to the internal chat.
+async def send_alert_photo(bot, caption, buttons, *, reply_to=None, image=None):
+    """Send alert image + caption + buttons to the internal chat.
     Falls back to a text message if the image file is missing."""
-    img = _alert_image()
+    img = image if (image and os.path.exists(image)) else _alert_image()
     if img:
         return await bot.send_file(
             config.INTERNAL_CHAT_ID, img, caption=caption, buttons=buttons,

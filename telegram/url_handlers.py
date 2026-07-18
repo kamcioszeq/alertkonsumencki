@@ -30,6 +30,9 @@ def _ensure_adoption(phase1_msg_id: int, artifacts: dict) -> dict:
         "title": artifacts.get("title") or post.get("title", ""),
         "image": artifacts.get("image") or post.get("image") or root_config.ALERT_IMAGE,
         "has_url": bool(artifacts.get("article_url") or post.get("article_url")),
+        "kind": artifacts.get("kind") or post.get("kind", ""),
+        "kapielisko_id": artifacts.get("kapielisko_id") or post.get("kapielisko_id", ""),
+        "lokalizacja": artifacts.get("lokalizacja") or post.get("lokalizacja", ""),
     })
     pending_adoption[phase1_msg_id] = track_post(pending_adoption, post, sent_id=phase1_msg_id)
     return post
