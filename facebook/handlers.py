@@ -35,65 +35,127 @@ def _alert_image(post: dict) -> Optional[str]:
     return None
 
 
+def _kapieliska_image() -> str:
+    p = root_config.KAPIELISKA_IMAGE
+    if p and os.path.exists(p):
+        return p
+    return root_config.ALERT_IMAGE
+
+
 def _process_fb_text(raw: str, *, fallback: Optional[str] = None) -> tuple[str, str]:
     text, banner = apply_banner_from_llm(raw, fallback=fallback)
     return fit_fb_text(text), banner
 
 
-async def _send_fb_preview(bot, text: str, buttons, *, reply_to=None):
+async def _send_fb_preview(bot, text: str, buttons, *, reply_to=None, image: Optional[str] = None):
+    """Podgląd FB w TG — ze zdjęciem, jeśli podane (kąpieliska: Wakacje.png)."""
+    img = image if (image and os.path.exists(image)) else None
+    if not img:
+        return await bot.send_message(
+            INTERNAL_CHAT_ID,
+            text,
+            buttons=buttons,
+            reply_to=reply_to,
+        )
+    # Telegram caption max 1024 — dłuższy podgląd = foto + osobna wiadomość z tekstem
+    if len(text) <= 1024:
+        return await bot.send_file(
+            INTERNAL_CHAT_ID, img, caption=text, buttons=buttons, reply_to=reply_to,
+        )
+    await bot.send_file(INTERNAL_CHAT_ID, img, reply_to=reply_to)
     return await bot.send_message(
-        INTERNAL_CHAT_ID,
-        text,
-        buttons=buttons,
-        reply_to=reply_to,
+        INTERNAL_CHAT_ID, text, buttons=buttons, reply_to=reply_to,
     )
 
 
-async def _generate_fb_comment(source_text: str, source: str) -> str:
-    raw = await ask_claude(
-        source_text, source or "fb",
-        FB_COMMENT_GENERATE_INSTRUCTION,
-        system_prompt=FB_COMMENT_SYSTEM_PROMPT,
-    )
+async def _generate_fb_comment(source_text: str, source: str, *, kapieliska: bool = False) -> str:
+    if kapieliska:
+        from kapieliska.prompts import (
+            FB_KAPIELISKA_COMMENT_SYSTEM,
+            FB_KAPIELISKA_COMMENT_GENERATE,
+        )
+        raw = await ask_claude(
+            source_text, source or "fb",
+            FB_KAPIELISKA_COMMENT_GENERATE,
+            system_prompt=FB_KAPIELISKA_COMMENT_SYSTEM,
+        )
+    else:
+        raw = await ask_claude(
+            source_text, source or "fb",
+            FB_COMMENT_GENERATE_INSTRUCTION,
+            system_prompt=FB_COMMENT_SYSTEM_PROMPT,
+        )
     return fit_fb_text(raw, max_chars=1000)
 
 
 async def _regen_fb(bot, post: dict, instruction: str, *, label: str):
+    from kapieliska.prompts import (
+        is_kapieliska_source,
+        FB_KAPIELISKA_SYSTEM_PROMPT,
+        kapieliska_generate_instruction,
+    )
+    kap = (
+        is_kapieliska_source(post.get("source", ""), post.get("original_text", ""))
+        or post.get("kind") == "kapieliska"
+    )
+    sys_p = FB_KAPIELISKA_SYSTEM_PROMPT if kap else FB_SYSTEM_PROMPT
+    use_instruction = kapieliska_generate_instruction() if kap else instruction
     rewritten = await ask_claude(
         post["text"], post.get("source", "fb"),
-        instruction,
-        system_prompt=FB_SYSTEM_PROMPT,
+        use_instruction,
+        system_prompt=sys_p,
     )
+    if kap:
+        return fit_fb_text(rewritten), _kapieliska_image()
     return _process_fb_text(rewritten, fallback=post.get("image"))
 
 
 async def _generate_fb_draft(
     bot, *, source_text, source, instruction, anchor,
     image="", tg_text="", original_text="", parent_msg_id=None,
-    icon_hint="", comment_text="",
+    icon_hint="", comment_text="", kapielisko_id="", lokalizacja="",
 ):
     """Wygeneruj draft FB (post + komentarz), wyślij podgląd. Zwraca (sent, fb_text)."""
-    full_instruction = instruction
-    if icon_hint:
+    from kapieliska.prompts import (
+        is_kapieliska_source,
+        FB_KAPIELISKA_SYSTEM_PROMPT,
+        kapieliska_generate_instruction,
+    )
+
+    kap = is_kapieliska_source(source or "", original_text or source_text or "")
+    sys_p = FB_KAPIELISKA_SYSTEM_PROMPT if kap else FB_SYSTEM_PROMPT
+    use_instruction = kapieliska_generate_instruction() if kap else instruction
+
+    full_instruction = use_instruction
+    if icon_hint and not kap:
         full_instruction += f"\n\n{icon_hint}"
 
     fb_text_raw = await ask_claude(
-        source_text, source or "telegram", full_instruction, system_prompt=FB_SYSTEM_PROMPT,
+        source_text, source or "telegram", full_instruction, system_prompt=sys_p,
     )
     if fb_text_raw.startswith("Błąd Claude"):
         return None, fb_text_raw
 
-    fb_text, banner = _process_fb_text(
-        fb_text_raw, fallback=image or root_config.ALERT_IMAGE,
-    )
+    # Kąpieliska: stały baner Wakacje.png (bez banerów żywności)
+    if kap:
+        fb_text = fit_fb_text(fb_text_raw)
+        banner = _kapieliska_image()
+    else:
+        fb_text, banner = _process_fb_text(
+            fb_text_raw, fallback=image or root_config.ALERT_IMAGE,
+        )
 
     comment_src = original_text or source_text
-    fb_comment = comment_text or await _generate_fb_comment(comment_src, source or "telegram")
+    fb_comment = comment_text or await _generate_fb_comment(
+        comment_src, source or "telegram", kapieliska=kap,
+    )
     if fb_comment.startswith("Błąd Claude"):
         return None, fb_comment
 
     preview = format_fb_preview(fb_text, fb_comment)
-    sent = await _send_fb_preview(bot, preview, make_fb_adjust_buttons(), reply_to=anchor)
+    sent = await _send_fb_preview(
+        bot, preview, make_fb_adjust_buttons(), reply_to=anchor, image=banner,
+    )
     fb_post = {
         "text": fb_text,
         "comment_text": fb_comment,
@@ -106,10 +168,14 @@ async def _generate_fb_draft(
         "phase1_msg_id": anchor,
         "parent_msg_id": parent_msg_id,
         "edit_chain": ["fb_generated"],
+        "kind": "kapieliska" if kap else "",
+        "kapielisko_id": kapielisko_id,
+        "lokalizacja": lokalizacja,
     }
     pending_posts[sent.id] = track_post(pending_posts, fb_post, sent_id=sent.id)
     shared_facts.merge(anchor, original_text=original_text or source_text,
-                       comment_text=fb_comment, source=source or "")
+                       comment_text=fb_comment, source=source or "",
+                       lokalizacja=lokalizacja)
     return sent, fb_text
 
 
@@ -128,6 +194,8 @@ async def generate_fb_from_artifacts(bot, *, artifacts: dict, anchor: int, icon_
         original_text=source_text,
         icon_hint=icon_hint,
         comment_text=artifacts.get("comment_text", ""),
+        kapielisko_id=artifacts.get("kapielisko_id", ""),
+        lokalizacja=artifacts.get("lokalizacja", ""),
     )
 
 
@@ -347,6 +415,33 @@ def register_facebook_handlers(bot):
                 )
                 post["platform"] = "fb_published"
                 post["fb_post_id"] = result
+                # Kąpieliska: zapamiętaj post FB na 30 dni (update statusu → komentarz)
+                if post.get("kind") == "kapieliska" or "KĄPIELISK" in (post.get("source") or "").upper():
+                    try:
+                        from kapieliska.store import register_active_alert, set_active_fb_post
+                        kid = post.get("kapielisko_id") or ""
+                        if not kid:
+                            # spróbuj z URL w original_text / article
+                            import re
+                            m = re.search(r"/kapielisko/(\d+)", post.get("original_text", "") + " " + post.get("source", ""))
+                            if m:
+                                kid = m.group(1)
+                        if kid:
+                            set_active_fb_post(kid, result)
+                            register_active_alert(
+                                {
+                                    "id": kid,
+                                    "name": post.get("title", ""),
+                                    "url": f"https://sk.gis.gov.pl/kapielisko/{kid}",
+                                    "lokalizacja": post.get("lokalizacja", ""),
+                                    "ocena": "",
+                                    "data_oceny": "",
+                                },
+                                fb_post_id=result,
+                            )
+                            print(f"[PUB_FB] active alert 30d: kapielisko {kid} → {result}")
+                    except Exception as e:
+                        print(f"[PUB_FB] active alert save failed: {e}")
                 shared_facts.merge(
                     post.get("phase1_msg_id", msg_id),
                     original_text=post.get("original_text", ""),
@@ -422,7 +517,9 @@ def register_facebook_handlers(bot):
                 return
             anchor = post.get("phase1_msg_id")
             preview = format_fb_preview(rewritten, post.get("comment_text", ""))
-            sent = await _send_fb_preview(bot, preview, make_fb_adjust_buttons(), reply_to=anchor)
+            sent = await _send_fb_preview(
+                bot, preview, make_fb_adjust_buttons(), reply_to=anchor, image=banner,
+            )
 
             post["text"] = rewritten
             post["image"] = banner
@@ -452,6 +549,7 @@ def register_facebook_handlers(bot):
             return
 
         text = event.text.strip()
+        is_kap = post.get("kind") == "kapieliska" or "KĄPIELISK" in (post.get("source") or "").upper()
         if text.startswith("!"):
             post["text"] = fit_fb_text(text[1:].strip())
             await event.reply("Tekst FB zaktualizowany.")
@@ -460,20 +558,32 @@ def register_facebook_handlers(bot):
             await event.reply("Komentarz FB zaktualizowany.")
         else:
             await event.reply("Przerabiam wersję FB...")
+            from kapieliska.prompts import FB_KAPIELISKA_SYSTEM_PROMPT
+            sys_p = FB_KAPIELISKA_SYSTEM_PROMPT if is_kap else FB_SYSTEM_PROMPT
             new_text = await edit_claude(
                 post["text"],
                 FB_MANUAL_EDIT_INSTRUCTION(text),
                 source_facts=post.get("original_text", ""),
                 source=post.get("source", "fb"),
-                system_prompt=FB_SYSTEM_PROMPT,
+                system_prompt=sys_p,
             )
-            post["text"], post["image"] = _process_fb_text(
-                new_text, fallback=post.get("image"),
-            )
+            if is_kap:
+                post["text"] = fit_fb_text(new_text)
+                post["image"] = _kapieliska_image()
+            else:
+                post["text"], post["image"] = _process_fb_text(
+                    new_text, fallback=post.get("image"),
+                )
+
+        if is_kap:
+            post["image"] = _kapieliska_image()
 
         anchor = post.get("phase1_msg_id")
         preview = format_fb_preview(post["text"], post.get("comment_text", ""))
-        sent = await _send_fb_preview(bot, preview, make_fb_adjust_buttons(), reply_to=anchor)
+        sent = await _send_fb_preview(
+            bot, preview, make_fb_adjust_buttons(),
+            reply_to=anchor, image=post.get("image"),
+        )
         pending_posts.pop(original_msg_id, None)
         pending_posts[sent.id] = track_post(pending_posts, post, sent_id=sent.id)
         if anchor:

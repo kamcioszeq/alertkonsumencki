@@ -138,6 +138,7 @@ async def resolve_artifacts(bot, phase1_msg_id: int, *, allow_fetch: bool = True
         for k in (
             "original_text", "comment_text", "source", "title", "image",
             "article_url", "user_instruction", "repeat_context",
+            "kind", "kapielisko_id", "lokalizacja",
         )
         if artifacts.get(k)
     })

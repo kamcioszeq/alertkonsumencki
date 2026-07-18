@@ -5,6 +5,8 @@ state.json
 gis_alerts/
 crawler_state.json
 queue/
+kapieliska/data/
+.pw-browsers/
 __pycache__/
 *.pyc
 .env
