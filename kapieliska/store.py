@@ -12,13 +12,13 @@ from . import config
 LIST_FIELDS = ["id", "name", "url", "active"]
 OCENA_FIELDS = [
     "id", "name", "url", "ocena", "data_oceny", "nastepne_badanie",
-    "ecoli", "enterokoki", "sezon_od", "sezon_do",
+    "ecoli", "enterokoki", "przyczyna", "sezon_od", "sezon_do",
     "adres", "powiat", "wojewodztwo", "akwen", "lokalizacja",
     "updated_at",
 ]
 UPDATE_FIELDS = [
     "ts", "id", "name", "url", "ocena", "data_oceny", "ecoli", "enterokoki",
-    "reason", "prev_ocena", "prev_data_oceny", "lokalizacja", "kind",
+    "przyczyna", "reason", "prev_ocena", "prev_data_oceny", "lokalizacja", "kind",
 ]
 
 

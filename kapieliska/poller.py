@@ -36,6 +36,19 @@ def _parse_int(val: str) -> str:
     return m.group(0) if m else ""
 
 
+def _split_ocena_przyczyna(raw: str) -> tuple[str, str]:
+    """Rozdziel 'Woda nieprzydatna… Przyczyna: Zakwit sinic'."""
+    text = (raw or "").strip()
+    if not text:
+        return "", ""
+    m = re.search(r"(?is)przyczyna\s*:\s*(.+)$", text)
+    if not m:
+        return text, ""
+    przyczyna = re.split(r"[\n\r]", m.group(1).strip())[0].strip()
+    ocena = re.split(r"(?i)przyczyna\s*:", text, maxsplit=1)[0].strip(" \n\r-–|")
+    return ocena, przyczyna
+
+
 async def parse_detail(page, url: str) -> Optional[dict[str, str]]:
     """Wejdź na stronę kąpieliska i wyciągnij najnowszą ocenę wody + lokalizację."""
     await page.goto(url, wait_until="networkidle", timeout=60_000)
@@ -51,7 +64,7 @@ async def parse_detail(page, url: str) -> Optional[dict[str, str]]:
               )
             )
           );
-          let ocena = '', dataOc = '', nast = '';
+          let ocena = '', dataOc = '', nast = '', przyczyna = '', powodFlagi = '';
           const m1 = body.match(/Ocena wody\\s*\\n\\s*(.+)/);
           if (m1) ocena = m1[1].trim();
           const m2 = body.match(/Data oceny:\\s*(\\d{2}\\/\\d{2}\\/\\d{4})/);
@@ -59,6 +72,29 @@ async def parse_detail(page, url: str) -> Optional[dict[str, str]]:
           const m3 = body.match(/Następne badanie:\\s*(\\d{2}\\/\\d{2}\\/\\d{4})/);
           if (m3) nast = m3[1];
           const sezon = (body.match(/Sezon kąpielowy[^\\n]{0,80}/) || [''])[0];
+          const flagM = body.match(/Powód wywieszenia czerwonej flagi:\\s*\\n?\\s*([^\\n]+)/i);
+          if (flagM) powodFlagi = flagM[1].trim();
+
+          // Przyczyna z tabeli ocen (HTML: ...<hr>Przyczyna:<br>Zakwit sinic)
+          for (const t of document.querySelectorAll('table')) {
+            const rows = [...t.querySelectorAll('tr')];
+            if (rows.length < 2) continue;
+            const head = (rows[0].innerText || '').toLowerCase();
+            if (!head.includes('ocena') && !head.includes('coli')) continue;
+            const cells = [...rows[1].querySelectorAll('th,td')];
+            if (cells.length < 2) continue;
+            const ocHtml = cells[1].innerHTML || '';
+            const ocText = (cells[1].innerText || '').replace(/\\s+/g, ' ').trim();
+            const pHtml = ocHtml.match(/Przyczyna:\\s*(?:<br\\s*\\/?>)?\\s*([^<]+)/i);
+            const pText = ocText.match(/Przyczyna:\\s*(.+)$/i);
+            if (pHtml) przyczyna = pHtml[1].trim();
+            else if (pText) przyczyna = pText[1].trim();
+            if (!przyczyna && powodFlagi) przyczyna = powodFlagi;
+            // ocena z komórki bez bloku Przyczyna
+            const ocClean = ocText.replace(/Przyczyna:\\s*.+$/i, '').trim();
+            if (ocClean) ocena = ocClean;
+            break;
+          }
 
           const grab = (label) => {
             const re = new RegExp(label + '\\\\s*\\\\n\\\\s*([^\\\\n]+)', 'i');
@@ -87,7 +123,7 @@ async def parse_detail(page, url: str) -> Optional[dict[str, str]]:
               }
             }
           }
-          return { name, ocena, dataOc, nast, sezon, tables, adres, akwen, woj, pow };
+          return { name, ocena, dataOc, nast, sezon, tables, adres, akwen, woj, pow, przyczyna, powodFlagi };
         }"""
     )
     if not data:
@@ -96,6 +132,7 @@ async def parse_detail(page, url: str) -> Optional[dict[str, str]]:
     ocena = (data.get("ocena") or "").strip()
     data_oceny = (data.get("dataOc") or "").strip()
     nastepne = (data.get("nast") or "").strip()
+    przyczyna = (data.get("przyczyna") or data.get("powodFlagi") or "").strip()
     ecoli = enterokoki = ""
 
     tables = data.get("tables") or []
@@ -106,17 +143,27 @@ async def parse_detail(page, url: str) -> Optional[dict[str, str]]:
         if "ocena" not in header and "coli" not in header:
             continue
         row = table[1]
+        if len(row) >= 2:
+            cell_ocena, cell_przyczyna = _split_ocena_przyczyna(row[1])
+            data_oceny = data_oceny or (row[0] if row else "")
+            if cell_ocena:
+                ocena = ocena or cell_ocena
+            if cell_przyczyna and not przyczyna:
+                przyczyna = cell_przyczyna
         if len(row) >= 5:
-            data_oceny = data_oceny or row[0]
-            ocena = ocena or row[1]
             ecoli = _parse_int(row[2])
             enterokoki = _parse_int(row[3])
             nastepne = nastepne or row[4]
             break
         if len(row) >= 2:
-            data_oceny = data_oceny or row[0]
-            ocena = ocena or row[1]
             break
+
+    if not przyczyna:
+        przyczyna = (data.get("powodFlagi") or "").strip()
+    # sprzątanie oceny, gdy scrap wcześniej skleił Przyczyna:
+    ocena, przyczyna2 = _split_ocena_przyczyna(ocena)
+    if przyczyna2 and not przyczyna:
+        przyczyna = przyczyna2
 
     sezon_od = sezon_do = ""
     sm = _SEZON_RE.search(data.get("sezon") or "")
@@ -155,6 +202,7 @@ async def parse_detail(page, url: str) -> Optional[dict[str, str]]:
         "nastepne_badanie": nastepne,
         "ecoli": ecoli,
         "enterokoki": enterokoki,
+        "przyczyna": przyczyna,
         "sezon_od": sezon_od,
         "sezon_do": sezon_do,
         "adres": adres,
@@ -316,6 +364,7 @@ async def run_cycle(
                                 "data_oceny": row["data_oceny"],
                                 "ecoli": row.get("ecoli", ""),
                                 "enterokoki": row.get("enterokoki", ""),
+                                "przyczyna": row.get("przyczyna", ""),
                                 "reason": decision.get("reason", ""),
                                 "prev_ocena": (prev or {}).get("ocena", ""),
                                 "prev_data_oceny": (prev or {}).get("data_oceny", ""),
@@ -341,6 +390,7 @@ async def run_cycle(
                                 "data_oceny": row["data_oceny"],
                                 "ecoli": row.get("ecoli", ""),
                                 "enterokoki": row.get("enterokoki", ""),
+                                "przyczyna": row.get("przyczyna", ""),
                                 "reason": decision.get("reason", ""),
                                 "prev_ocena": prev.get("ocena", ""),
                                 "prev_data_oceny": prev.get("data_oceny", ""),

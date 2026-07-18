@@ -106,6 +106,8 @@ def evaluate_change(prev: Optional[dict], new: dict) -> dict:
         reasons.append(f"E. coli={ecoli} > {config.ECOLI_LIMIT}")
     if enter is not None and enter > config.ENTEROKOKI_LIMIT:
         reasons.append(f"enterokoki={enter} > {config.ENTEROKOKI_LIMIT}")
+    if (new.get("przyczyna") or "").strip():
+        reasons.append(f"przyczyna: {new['przyczyna'].strip()}")
 
     should_alert = is_new and is_threat(new)
     # Status notify: zmiana oceny gdy mamy aktywny alert (poller sprawdzi active_alerts)

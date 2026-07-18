@@ -57,7 +57,8 @@ FB_KAPIELISKA_SYSTEM_PROMPT = (
     "   «Ważna informacja dla plażowiczów:» + ocena GIS z datą + że woda jest niezdatna, "
     "z pełną lokalizacją w nawiasie (akwen, nazwa kąpieliska, miejscowość, adres).\n"
     "3) Powód — jedna linia:\n"
-    "   «🦠 Powód: …» (E. coli / enterokoki / zakwit — tylko jeśli jest w źródle).\n"
+    "   «🦠 Powód: …» — jeśli w źródle jest Przyczyna (np. Zakwit sinic), użyj jej. "
+    "Inaczej E. coli / enterokoki / zakwit — tylko jeśli jest w źródle.\n"
     "4) CTA — jedna linia, np.:\n"
     "   «Dbajcie o zdrowie, omijajcie dziś to kąpielisko i podajcie info dalej! 🔄»\n"
     "\n"
@@ -114,6 +115,7 @@ FB_KAPIELISKA_COMMENT_SYSTEM = (
     "🏖️ Kąpielisko: [nazwa]\n"
     "📍 Lokalizacja: [adres / woj. / powiat / akwen — co jest w źródle]\n"
     "💧 Ocena: [tekst oceny]\n"
+    "⚠️ Przyczyna: [np. Zakwit sinic] (pomiń, jeśli brak)\n"
     "📅 Data oceny: [DD.MM.RRRR]\n"
     "🔬 E. coli: [wartość] (pomiń, jeśli brak)\n"
     "🔬 Enterokoki: [wartość] (pomiń, jeśli brak)\n"
@@ -144,11 +146,13 @@ def build_alert_text(row: dict, decision: dict, prev: Optional[dict] = None) -> 
         f"Lokalizacja: {loc}" if loc else "Lokalizacja: (brak w źródle)",
         f"URL: {row.get('url', '')}",
         f"Ocena wody: {row.get('ocena', '')}",
+        f"Przyczyna: {row.get('przyczyna', '')}" if row.get("przyczyna") else "",
         f"Data oceny: {row.get('data_oceny', '')}",
         f"Następne badanie: {row.get('nastepne_badanie', '')}",
         f"E. coli: {row.get('ecoli', '') or '—'} jtk/100 ml",
         f"Enterokoki: {row.get('enterokoki', '') or '—'} jtk/100 ml",
     ]
+    lines = [ln for ln in lines if ln]
     if row.get("sezon_od"):
         lines.append(f"Sezon: {row.get('sezon_od')} – {row.get('sezon_do')}")
     if prev.get("ocena"):
